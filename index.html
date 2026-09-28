@@ -1,327 +1,672 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Song Timer — tap lyric timings</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Google+Sans+Code:wght@400;500;700&display=swap" rel="stylesheet">
+<meta name="description" content="Tap lyric timings while a song plays, adjust them, and export .lrc for AbleSet in Ableton Live, or for the Remotion lyric-overlay renderer. Runs entirely in your browser.">
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* Slate + cyan. Deliberately not the amber-on-black of AbleBridgePlus. */
+  :root {
+    --bg:        #0d1117;
+    --surface:   #161b22;
+    --surface-2: #1c232c;
+    --line:      #26303a;
+    --line-2:    #323d4a;
+    --text:      #e6edf3;
+    --dim:       #8b98a9;
+    --faint:     #5b6672;
+    --cyan:      #22d3ee;
+    --cyan-deep: #0e7490;
+    --teal:      #2dd4bf;
+    --warn:      #fbbf24;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+
   body {
-    font-family: "Google Sans Code", "Cascadia Code", Consolas, monospace;
-    background: #14141a;
-    color: #e8e8ef;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    /* Sans for the interface. Monospace is reserved for timestamps, where
+       digit alignment actually matters. */
+    font: 400 15px/1.6 "Inter", system-ui, -apple-system, "Segoe UI", Roboto,
+          "Noto Sans", sans-serif;
     min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 24px 16px 48px;
   }
-  h1 { font-size: 1.4rem; font-weight: 600; margin-bottom: 4px; }
-  .sub { color: #8b8b9e; font-size: .85rem; margin-bottom: 16px; }
-  .card {
-    background: #1d1d26;
-    border: 1px solid #2c2c3a;
-    border-radius: 14px;
-    padding: 18px;
-    width: 100%;
-    max-width: 820px;
-    margin-bottom: 14px;
+
+  /* Lyrics are largely Devanagari. A Latin-first monospace stack renders
+     Nepali inconsistently, so the lyric text gets its own stack. */
+  .lyric, #lyrics {
+    font-family: "Noto Sans Devanagari", "Nirmala UI", "Microsoft New Tai Lue",
+                 "Inter", system-ui, "Segoe UI", sans-serif;
   }
-  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  button {
-    background: #2d2d3d;
-    color: #e8e8ef;
-    border: 1px solid #3d3d52;
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-size: .9rem;
-    cursor: pointer;
+  .mono {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+                 "Liberation Mono", monospace;
+    font-variant-numeric: tabular-nums;
   }
-  button:hover { background: #3a3a4e; }
-  button:disabled { opacity: .4; cursor: not-allowed; }
-  button.primary { background: #4f6ef7; border-color: #4f6ef7; }
-  button.primary:hover { background: #6a85f8; }
-  #tapBtn {
-    flex: 1;
-    min-width: 260px;
-    padding: 16px;
-    font-size: 1.1rem;
-    font-weight: 600;
-    background: #18b26b;
-    border-color: #18b26b;
+
+  /* ── header ─────────────────────────────────────────────── */
+  header {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 14px 24px;
+    background: rgba(13, 17, 23, .92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
   }
-  #tapBtn:hover { background: #22c978; }
-  input[type="file"] { color: #8b8b9e; font-size: .85rem; }
-  input[type="text"], textarea {
-    background: #14141a;
-    color: #e8e8ef;
-    border: 1px solid #2c2c3a;
-    border-radius: 8px;
-    padding: 8px 10px;
-    font-size: .9rem;
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 16px; }
+  .brand .dot {
+    width: 26px; height: 26px; border-radius: 7px;
+    display: grid; place-items: center;
+    background: linear-gradient(150deg, #1d2733, #131a22);
+    border: 1px solid var(--line-2);
+    color: var(--cyan); font-size: 14px;
   }
-  input[type="text"] { flex: 1; min-width: 200px; }
-  #lyrics { width: 100%; min-height: 200px; resize: vertical; line-height: 1.5; }
-  #player { width: 100%; margin-top: 10px; }
-  .time { font-variant-numeric: tabular-nums; font-size: 1.05rem; color: #9aa5ff; }
-  #playerCard { box-shadow: 0 6px 24px rgba(0, 0, 0, .35); }
-  /* Wide screens: the player lives in its own sticky right rail — always
-     visible while the lyrics scroll, with no scroll-triggered snapping. */
-  .layout {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 14px;
-    align-items: start;
+  .now-title { color: var(--dim); font-size: 14px; }
+  .now-title b { color: var(--text); font-weight: 600; }
+  .spacer { margin-left: auto; }
+
+  .progress {
+    display: flex; align-items: center; gap: 10px;
+    color: var(--dim); font-size: 13px;
   }
-  @media (min-width: 1200px) {
-    .wrap { max-width: 1280px; }
-    .layout { grid-template-columns: minmax(0, 1fr) 380px; }
-    .rail { position: sticky; top: 18px; grid-column: 2; grid-row: 1; }
+  .bar {
+    width: 130px; height: 5px; border-radius: 3px;
+    background: var(--surface-2); overflow: hidden;
+  }
+  .bar i {
+    display: block; height: 100%; width: 0;
+    background: linear-gradient(90deg, var(--cyan-deep), var(--cyan));
+    transition: width .2s ease;
+  }
+
+  /* ── layout ─────────────────────────────────────────────── */
+  .wrap { max-width: 1500px; margin: 0 auto; padding: 22px 24px 60px; }
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-items: start; }
+  @media (min-width: 1100px) {
+    .grid { grid-template-columns: minmax(0, 1fr) 372px; }
+    .rail { grid-column: 2; grid-row: 1; position: sticky; top: 78px; }
     .main { grid-column: 1; grid-row: 1; }
   }
-  .list { width: 100%; max-width: 820px; }
-  .line {
-    display: flex; align-items: center; gap: 12px;
-    padding: 8px 12px; border-radius: 8px;
-    border-bottom: 1px solid #23232e;
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin-bottom: 16px;
+  }
+
+  .card-title {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    font-size: 12px; font-weight: 650; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--faint); margin-bottom: 12px;
+  }
+
+  /* ── controls ───────────────────────────────────────────── */
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+  button, .btn {
+    appearance: none;
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--line-2);
+    border-radius: 8px;
+    padding: 8px 13px;
+    font: 500 14px/1 "Inter", system-ui, sans-serif;
     cursor: pointer;
-    transition: background-color .18s ease, opacity .18s ease;
+    transition: background .14s ease, border-color .14s ease, opacity .14s ease;
   }
-  .line.current { background: #26264f; outline: 1px solid #4f6ef7; }
-  .line.sung { opacity: .55; }
-  .line .stamp {
-    color: #18b26b; font-variant-numeric: tabular-nums;
-    min-width: 122px; font-size: .9rem;
-    display: flex; gap: 4px; align-items: center; flex-wrap: wrap;
+  button:hover:not(:disabled) { background: #232c37; border-color: #43505f; }
+  button:disabled { opacity: .38; cursor: not-allowed; }
+  button.primary {
+    background: linear-gradient(180deg, #2ee0f7, #14b8d4);
+    border-color: #0e7490; color: #04222a; font-weight: 650;
   }
-  .line .stamp .t { min-width: 74px; }
-  .line .txt { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  .kbd {
-    font-family: "Google Sans Code", Consolas, monospace; font-size: .72rem;
-    background: #26262f; border: 1px solid #3a3a4a;
-    border-radius: 4px; padding: 1px 6px; color: #a8b2d1;
+  button.primary:hover:not(:disabled) { background: linear-gradient(180deg, #55eaff, #1bc4e0); }
+  button.ghost { background: transparent; }
+  button.tiny { padding: 4px 7px; font-size: 12px; border-radius: 6px; }
+
+  input[type="text"], textarea {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--line-2);
+    border-radius: 8px;
+    padding: 9px 11px;
+    font-size: 14px;
+    min-width: 0;
+  }
+  input[type="text"] { flex: 1; }
+  input[type="text"]:focus, textarea:focus, button:focus-visible {
+    outline: none; border-color: var(--cyan);
+  }
+  input[type="file"] { color: var(--dim); font-size: 13.5px; }
+  #lyrics { width: 100%; min-height: 170px; resize: vertical; line-height: 1.6; }
+
+  .time { color: var(--cyan); font-size: 14px; }
+  .status { color: var(--warn); font-size: 13.5px; min-height: 1.2em; }
+  .status.ok { color: var(--teal); }
+  #player { width: 100%; margin-top: 12px; border-radius: 8px; }
+
+  #tapBtn {
+    width: 100%; margin-top: 12px;
+    padding: 20px 16px;
+    font-size: 16px; font-weight: 700; letter-spacing: .02em;
+    background: linear-gradient(180deg, #1f2937, #172029);
+    border-color: #35455a; color: var(--text);
+  }
+  #tapBtn:hover:not(:disabled) { border-color: var(--cyan); }
+  #tapBtn.armed {
+    background: linear-gradient(180deg, #2dd4bf, #14b8a6);
+    border-color: #0f766e; color: #04211d;
+  }
+
+  .hint { color: var(--faint); font-size: 12.5px; margin-top: 10px; line-height: 1.55; }
+
+  /* ── keyboard reference: collapsed, it is a reference ──── */
+  details.keys summary {
+    cursor: pointer; color: var(--dim);
+    font-size: 12.5px; font-weight: 600;
+    letter-spacing: .04em;
+    list-style: none; user-select: none;
+  }
+  details.keys summary::-webkit-details-marker { display: none; }
+  details.keys summary::before { content: "▸ "; color: var(--cyan); }
+  details.keys[open] summary::before { content: "▾ "; }
+  .keys-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 7px 18px; margin-top: 14px;
+  }
+  .keys-grid span { color: var(--dim); font-size: 13px; }
+  kbd {
+    display: inline-block; min-width: 20px; text-align: center;
+    padding: 2px 6px; margin-right: 7px;
+    background: var(--surface-2); border: 1px solid var(--line-2);
+    border-bottom-width: 2px; border-radius: 5px;
+    font: 500 11.5px/1.5 var(--mono); color: var(--text);
+  }
+
+  /* ── lyric list: the main work area, so it gets the room ── */
+  .list { display: grid; gap: 2px; }
+  .line {
+    display: grid;
+    /* Wide enough for the timestamp PLUS the four nudge buttons, which only
+       appear on the current row. A 96px column made them overlap the lyric
+       text. Kept fixed (not auto) so timestamps stay vertically aligned down
+       the list, which is the whole point of showing them. */
+    grid-template-columns: 216px minmax(0, 1fr) auto;
+    align-items: center; gap: 14px;
+    padding: 10px 12px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background .13s ease, border-color .13s ease;
+  }
+  .line:hover { background: var(--surface); }
+  .line.current {
+    background: var(--surface-2);
+    border-color: var(--cyan);
+  }
+  .line .txt { font-size: 16px; min-width: 0; overflow-wrap: anywhere; }
+  .line:not(.sung) .txt { color: var(--faint); }
+
+  .stamp { display: flex; align-items: center; gap: 4px; }
+  .stamp .t {
+    background: transparent; border: 1px solid transparent; color: var(--faint);
+    padding: 3px 6px; border-radius: 6px; cursor: pointer;
+    font: 500 13.5px/1.4 var(--mono); font-variant-numeric: tabular-nums;
+    min-width: 78px; text-align: left;
+  }
+  .line.sung .stamp .t { color: var(--teal); border-color: rgba(45, 212, 191, .3); }
+  .line.sung .stamp .t:hover { border-color: var(--teal); }
+  .stamp .t input {
+    width: 78px; background: var(--bg); color: var(--text);
+    border: 1px solid var(--cyan); border-radius: 5px;
+    padding: 2px 5px; font: 500 13px/1.4 var(--mono);
   }
   .nudge {
-    background: #23232e; border: 1px solid #34344a; border-radius: 5px;
-    color: #9aa5ff; padding: 0 7px; font-size: .85rem; cursor: pointer; line-height: 1.6;
+    background: var(--surface-2); border: 1px solid var(--line-2);
+    color: var(--dim); border-radius: 6px;
+    padding: 3px 7px; cursor: pointer;
+    font: 500 12px/1.4 var(--mono);
   }
-  .nudge:hover { background: #2e2e40; }
+  .nudge:hover { color: var(--text); border-color: var(--cyan); }
+  .line.current .nudge { display: inline-block; }
+  .line:not(.current) .nudge { display: none; }
+
+  /* Narrow screens: the nudges are keyboard-driven anyway, so drop them and
+     give the lyric text the width back. */
+  @media (max-width: 720px) {
+    .line { grid-template-columns: 84px minmax(0, 1fr); }
+    .line .nudge { display: none !important; }
+  }
+
+  .empty { color: var(--faint); font-size: 14px; padding: 22px 4px; text-align: center; }
+
+  /* ── export ─────────────────────────────────────────────── */
+  .export-note {
+    margin: 12px 0 0; padding: 11px 13px;
+    background: var(--bg); border: 1px solid var(--line);
+    border-left: 2px solid var(--cyan-deep); border-radius: 0 7px 7px 0;
+    color: var(--dim); font-size: 12.5px; line-height: 1.6;
+  }
+  .export-note b { color: var(--text); font-weight: 600; }
+  .export-note code {
+    background: var(--surface-2); padding: 1px 5px; border-radius: 4px;
+    font: 500 12px var(--mono); color: var(--cyan);
+  }
+
   #modeBanner {
-    display: none;
-    position: fixed; top: 0; left: 0; right: 0;
-    background: #b3541e; color: #fff; font-weight: 600;
-    padding: 6px; text-align: center; z-index: 10; font-size: .9rem;
+    display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 30;
+    background: var(--cyan-deep); color: #eaffff;
+    padding: 7px; text-align: center; font-size: 13px; font-weight: 600;
   }
   body.previewing #modeBanner { display: block; }
-  .hint { color: #6d6d80; font-size: .78rem; margin-top: 4px; }
-  .status { color: #f0b429; font-size: .85rem; min-height: 1.2em; }
-  a { color: #9aa5ff; }
-  details { width: 100%; }
-  summary { cursor: pointer; color: #a8b2d1; font-size: .85rem; margin-bottom: 8px; }
+
+  a { color: var(--cyan); }
 </style>
 </head>
 <body>
-<div id="modeBanner">👁 PREVIEW — current line highlighted &amp; auto-scrolled · P or Esc to exit</div>
-<h1>🎵 Song Timer</h1>
-<div class="sub">Load a song → play → tap each line → adjust → export LRC</div>
 
-<div class="card">
-  <details open>
-    <summary>⌨ Keyboard reference (click to collapse)</summary>
-    <div class="row" style="gap:18px;">
-      <span><span class="kbd">Space</span> play/pause</span>
-      <span><span class="kbd">Enter</span> stamp line</span>
-      <span><span class="kbd">↑/↓</span> select line</span>
-      <span><span class="kbd">←/→</span> seek ±3s</span>
-      <span><span class="kbd">, / .</span> nudge ±0.1s</span>
-      <span><span class="kbd">Shift+,/.</span> ±0.5s</span>
-      <span><span class="kbd">Backspace</span> clear stamp</span>
-      <span><span class="kbd">P</span> preview</span>
-      <span><span class="kbd">E</span> export</span>
+<div id="modeBanner">PREVIEW — current line highlighted and auto-scrolled · press P or Esc to exit</div>
+
+<header>
+  <div class="brand"><span class="dot">♪</span> Song Timer</div>
+  <div class="now-title" id="nowTitle"></div>
+  <div class="spacer"></div>
+  <div class="progress">
+    <span id="progressText" class="mono">0 / 0</span>
+    <span class="bar"><i id="progressBar"></i></span>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <details class="keys">
+      <summary>Keyboard reference</summary>
+      <div class="keys-grid">
+        <span><kbd>Space</kbd>play / pause</span>
+        <span><kbd>Enter</kbd>stamp line &amp; advance</span>
+        <span><kbd>↑</kbd><kbd>↓</kbd>select line</span>
+        <span><kbd>←</kbd><kbd>→</kbd>seek ∓3s</span>
+        <span><kbd>,</kbd><kbd>.</kbd>nudge ∓0.1s</span>
+        <span><kbd>⇧</kbd>+<kbd>,</kbd><kbd>.</kbd>∓0.5s</span>
+        <span><kbd>⌫</kbd>clear stamp</span>
+        <span><kbd>P</kbd>preview</span>
+        <span><kbd>E</kbd>export .lrc</span>
+        <span><kbd>Esc</kbd>exit preview</span>
+      </div>
+    </details>
+  </div>
+
+  <div class="grid">
+    <!-- lyrics: the actual work -->
+    <div class="main">
+      <div class="card">
+        <div class="card-title">
+          <span>Lyrics — one line per sung line</span>
+          <span id="lineCount" class="mono"></span>
+        </div>
+        <textarea id="lyrics" class="lyric"
+          placeholder="Type or load lyrics here, one sung line per line.&#10;[SECTION] headers are ignored."></textarea>
+        <p class="hint">Timings survive edits: if you fix a spelling, the line keeps its stamp. Click any timestamp to type an exact time.</p>
+      </div>
+
+      <div class="list" id="lineList"></div>
     </div>
-  </details>
-</div>
 
-<div class="layout">
-  <div class="rail">
-  <div class="card" id="playerCard">
-  <div class="row">
-    <label><input type="file" id="file" accept="audio/*"></label>
-    <button id="loadLyrics" type="button">Load .txt lyrics</button>
-    <input type="text" id="songTitle" placeholder="Song title (optional)">
-  </div>
-  <div class="row" style="margin-top:10px;">
-    <span class="time" id="time">0:00.0 / 0:00.0</span>
-    <span class="status" id="status"></span>
-  </div>
-  <audio id="player" controls></audio>
-  <div class="row" style="margin-top:10px;">
-    <button id="tapBtn" type="button" disabled>TAP (Enter) — stamp current line</button>
-    <button id="previewBtn" type="button" disabled>👁 Preview (P)</button>
-  </div>
-  <div class="hint">Enter stamps &amp; advances. Space plays/pauses. Nudge with , / . — Shift for ±0.5s. Lyrics stay editable: fixing spellings keeps each line's timing.</div>
-</div>
-  </div>
-  <div class="main">
+    <!-- player -->
+    <div class="rail">
+      <div class="card">
+        <div class="card-title"><span>Song</span><span id="dur" class="mono"></span></div>
+        <div class="row">
+          <label><input type="file" id="file" accept="audio/*"></label>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <input type="text" id="songTitle" placeholder="Song title (optional)">
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <button id="loadLyrics" type="button">Load .txt</button>
+          <button id="loadLrc" type="button" class="ghost">Load .lrc</button>
+        </div>
 
-<div class="card">
-  <div class="row"><strong>Lyrics (one line per sung line)</strong></div>
-  <textarea id="lyrics" placeholder="Type or load lyrics here, one sung line per line.&#10;[SECTION] headers are ignored."></textarea>
-  <div class="row" style="margin-top:10px;">
-    <button id="exportBtn" type="button" disabled>Export .lrc (E)</button>
-    <button id="clearBtn" type="button">Clear timings</button>
-    <span class="hint" id="progress"></span>
-  </div>
-</div>
+        <audio id="player" controls preload="metadata"></audio>
 
-<div class="list" id="lineList"></div>
+        <div class="row" style="margin-top:10px;">
+          <span class="time mono" id="time">0:00.0 / 0:00.0</span>
+        </div>
+        <div class="status" id="status"></div>
+
+        <button id="tapBtn" type="button" disabled>TAP — stamp current line</button>
+
+        <div class="row" style="margin-top:10px;">
+          <button id="previewBtn" type="button" disabled>Preview</button>
+          <button id="clearBtn" type="button" class="ghost">Clear timings</button>
+        </div>
+        <p class="hint">Space plays, Enter stamps. Nudge with <kbd>,</kbd> / <kbd>.</kbd> — hold Shift for ±0.5s.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span>Export</span></div>
+        <div class="row">
+          <button id="exportBtn" type="button" class="primary" disabled>Export .lrc</button>
+        </div>
+        <p class="export-note">
+          One <code>.lrc</code> feeds both ends of the pipeline:<br>
+          <b>AbleSet</b> — drop it on <code>ableset.com/tools/lyrics-lrc</code> to get a Live
+          set with one MIDI clip per line.<br>
+          <b>Video</b> — feed the same file to the Remotion renderer for a transparent
+          lyric overlay.
+        </p>
+      </div>
+    </div>
   </div>
 </div>
 
 <script>
 (function () {
   "use strict";
+
   const $ = (id) => document.getElementById(id);
   const audio = $("player");
-  const lines = [];      // { text, time: null | seconds }
+  const lines = [];            // { text, time: number|null }
+  const STORE = "songtimer.v1";
   let current = 0;
   let previewing = false;
+  let editing = -1;            // index of the timestamp being typed into
 
-  const fmt = (s) => {
-    if (s == null) return "--:--.--";
-    const m = Math.floor(s / 60);
-    const rest = s - m * 60;
-    return m + ":" + rest.toFixed(2).padStart(5, "0");
+  // ---------- formatting ----------
+  // Guards NaN: audio.duration is NaN until metadata loads, and
+  // Math.floor(NaN/60) is NaN, which used to print "NaN:NaN".
+  const num = (x) => (typeof x === "number" && isFinite(x) ? x : 0);
+  const clock = (s, dp) => {
+    const v = num(s);
+    const m = Math.floor(v / 60);
+    const r = v - m * 60;
+    return m + ":" + (dp === 1 ? r.toFixed(1) : r.toFixed(2).padStart(5, "0"));
+  };
+  const lrcStamp = (s) => {
+    const v = num(s);
+    return (
+      "[" + String(Math.floor(v / 60)).padStart(2, "0") + ":" +
+      (v % 60).toFixed(2).padStart(5, "0") + "]"
+    );
   };
 
-  function setStatus(msg) { $("status").textContent = msg || ""; }
+  function setStatus(msg, ok) {
+    const el = $("status");
+    el.textContent = msg || "";
+    el.className = "status" + (ok ? " ok" : "");
+  }
 
+  // ---------- persistence ----------
+  // Losing forty tapped timings to an accidental refresh is the worst failure
+  // this tool can have, so the session is mirrored to localStorage.
+  let saveTimer = null;
+  function save() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      try {
+        localStorage.setItem(STORE, JSON.stringify({
+          title: $("songTitle").value,
+          lyrics: $("lyrics").value,
+          lines: lines.map((l) => ({ text: l.text, time: l.time })),
+        }));
+      } catch (e) { /* private mode / quota: not fatal */ }
+    }, 250);
+  }
+  function loadSaved() {
+    try {
+      const raw = localStorage.getItem(STORE);
+      if (!raw) return false;
+      const d = JSON.parse(raw);
+      if (!d || !Array.isArray(d.lines) || !d.lines.length) return false;
+      lines.push(...d.lines);
+      $("lyrics").value = d.lyrics || d.lines.map((l) => l.text).join("\n");
+      $("songTitle").value = d.title || "";
+      return true;
+    } catch (e) { return false; }
+  }
+
+  // ---------- render ----------
   function render() {
     const list = $("lineList");
     list.innerHTML = "";
+
+    if (!lines.length) {
+      const e = document.createElement("div");
+      e.className = "empty";
+      e.textContent = "Load or type your lyrics to begin.";
+      list.appendChild(e);
+    }
+
     lines.forEach((ln, i) => {
       const row = document.createElement("div");
-      row.className = "line" + (i === current ? " current" : "") + (ln.time != null ? " sung" : "");
+      row.className =
+        "line" + (i === current ? " current" : "") + (ln.time != null ? " sung" : "");
+
       const stamp = document.createElement("span");
       stamp.className = "stamp";
-      const t = document.createElement("span");
-      t.className = "t";
-      t.textContent = fmt(ln.time);
-      stamp.appendChild(t);
-      if (i === current && ln.time != null && !previewing) {
-        for (const [label, delta, off] of [["−.5", -0.5, true], ["−", -0.1, false], ["+", 0.1, false], [".5+", 0.5, true]]) {
+
+      if (editing === i) {
+        const box = document.createElement("input");
+        box.className = "mono";
+        box.value = ln.time != null ? num(ln.time).toFixed(2) : "";
+        box.placeholder = "m:ss.ss";
+        const commit = () => {
+          const raw = box.value.trim();
+          if (raw) {
+            const m = raw.match(/^(?:(\d+):)?(\d+(?:\.\d+)?)$/);
+            if (m) {
+              const v = m[1] ? parseInt(m[1], 10) * 60 + parseFloat(m[2]) : parseFloat(m[2]);
+              ln.time = Math.max(0, v);
+            } else if (!isNaN(parseFloat(raw))) {
+              ln.time = Math.max(0, parseFloat(raw));
+            }
+          }
+          editing = -1;
+          save();
+          render();
+        };
+        box.onkeydown = (e) => {
+          if (e.key === "Enter") { e.preventDefault(); commit(); }
+          if (e.key === "Escape") { editing = -1; render(); }
+          e.stopPropagation();
+        };
+        box.onblur = commit;
+        stamp.appendChild(box);
+        setTimeout(() => { box.focus(); box.select(); }, 0);
+      } else {
+        const t = document.createElement("button");
+        t.className = "t";
+        t.type = "button";
+        t.textContent = ln.time != null ? clock(ln.time) : "--:--.--";
+        t.title = "Click to type an exact time";
+        t.onclick = (e) => {
+          e.stopPropagation();
+          current = i;
+          editing = i;
+          render();
+        };
+        stamp.appendChild(t);
+      }
+
+      if (i === current && editing !== i) {
+        for (const [label, delta] of [["−.5", -0.5], ["−", -0.1], ["+", 0.1], [".5", 0.5]]) {
           const b = document.createElement("button");
           b.className = "nudge";
+          b.type = "button";
           b.textContent = label;
           b.title = "Nudge " + (delta > 0 ? "+" : "") + delta + "s";
           b.onclick = (e) => { e.stopPropagation(); nudge(delta); };
           stamp.appendChild(b);
         }
       }
+
       const txt = document.createElement("span");
-      txt.className = "txt";
+      txt.className = "txt lyric";
       txt.textContent = ln.text || "—";
+
       row.appendChild(stamp);
       row.appendChild(txt);
       row.onclick = () => { current = i; render(); };
       list.appendChild(row);
     });
+
     const done = lines.filter((l) => l.time != null).length;
-    $("progress").textContent = lines.length
-      ? done + " / " + lines.length + " lines stamped"
+    $("progressText").textContent = done + " / " + lines.length;
+    $("progressBar").style.width =
+      lines.length ? Math.round((done / lines.length) * 100) + "%" : "0%";
+    $("lineCount").textContent = lines.length ? lines.length + " lines" : "";
+    $("nowTitle").innerHTML = $("songTitle").value
+      ? "· <b>" + escapeHtml($("songTitle").value) + "</b>"
       : "";
-    $("exportBtn").disabled = !lines.some((l) => l.time != null);
-    $("tapBtn").disabled = !audio.currentSrc && !audio.src ? true : !lines.length;
-    $("previewBtn").disabled = !audio.currentSrc && !audio.src ? true : !lines.some((l) => l.time != null);
-    if (previewing && current < lines.length) {
-      list.children[current].scrollIntoView({ block: "center", behavior: "smooth" });
-    } else if (list.children[current]) {
-      // While timing long lyrics, keep the active line in view — but never
-      // yank the page while the user is typing in the lyrics box.
-      const a = document.activeElement;
-      const typing = a && (a.tagName === "TEXTAREA" || a.tagName === "INPUT");
-      if (!typing) {
-        list.children[current].scrollIntoView({ block: "nearest", behavior: "smooth" });
-      }
+
+    const hasAny = done > 0;
+    const hasAudio = !!(audio.currentSrc || audio.src);
+    $("exportBtn").disabled = !hasAny;
+    $("previewBtn").disabled = !hasAudio || !hasAny;
+    $("tapBtn").disabled = !hasAudio || !lines.length;
+    $("tapBtn").classList.toggle("armed", hasAudio && lines.length > 0);
+    $("previewBtn").textContent = previewing ? "Exit preview" : "Preview";
+
+    // keep the working line in view, but never yank the page mid-typing
+    const a = document.activeElement;
+    const typing = a && (a.tagName === "TEXTAREA" || a.tagName === "INPUT");
+    if (!typing && list.children[current]) {
+      list.children[current].scrollIntoView({
+        block: previewing ? "center" : "nearest",
+        behavior: "smooth",
+      });
     }
   }
 
+  const escapeHtml = (s) =>
+    String(s).replace(/[&<>"]/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  // ---------- lyric text ----------
   function parseLyrics(text) {
-    return text.split(/\r?\n/)
+    return String(text)
+      .split(/\r?\n/)
       .map((l) => l.trim())
-      .filter((l) => l && !(l.startsWith("[") && l.endsWith("]")));
+      .filter((l) => l && !/^\[.+\]$/.test(l));
   }
 
-  $("lyrics").addEventListener("input", () => {
+  // Keep stamps across edits. A line keeps its time if the text matches a
+  // stamped line, else if it sits at the same position as one, and each old
+  // stamp is consumed at most once so nothing is duplicated.
+  function reparse() {
     const fresh = parseLyrics($("lyrics").value);
-    // Timing survival strategy (hybrid):
-    // 1. If a line's text matches an existing stamped line, keep that stamp
-    //    (handles insertions/deletions without shifting timings).
-    // 2. Otherwise, if a line sits at the same position as a stamped line,
-    //    keep that stamp (handles spelling/punctuation fixes).
-    // 3. Each old stamp is consumed at most once — no duplicated timings.
-    const usedTimes = new Set();
+    const used = new Set();
     const byText = new Map();
-    lines.forEach((l) => {
+    for (const l of lines) {
       if (l.time != null && !byText.has(l.text)) byText.set(l.text, l.time);
-    });
-    const textTimes = fresh.map((t) => {
-      const time = byText.has(t) && !usedTimes.has(byText.get(t)) ? byText.get(t) : null;
-      if (time != null) usedTimes.add(time);
-      return time;
-    });
+    }
     const next = fresh.map((text, i) => {
-      let time = textTimes[i];
-      if (time == null && lines[i] && lines[i].time != null && !usedTimes.has(lines[i].time)) {
+      let time = null;
+      const byT = byText.get(text);
+      if (byT != null && !used.has(byT)) { time = byT; }
+      else if (lines[i] && lines[i].time != null && !used.has(lines[i].time)) {
         time = lines[i].time;
       }
-      if (time != null) usedTimes.add(time);
+      if (time != null) used.add(time);
       return { text, time };
     });
     lines.length = 0;
     lines.push(...next);
-    current = 0;
+    if (current >= lines.length) current = Math.max(0, lines.length - 1);
+    save();
     render();
-  });
+  }
 
-  $("loadLyrics").onclick = () => {
+  $("lyrics").addEventListener("input", reparse);
+
+  // ---------- file loading ----------
+  function pickFile(accept, onText) {
     const inp = document.createElement("input");
     inp.type = "file";
-    inp.accept = ".txt,.lrc,text/plain";
+    inp.accept = accept;
     inp.onchange = () => {
       const f = inp.files[0];
       if (!f) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const text = String(reader.result).replace(/^\[\d+:\d+(\.\d+)?\]/gm, "");
-        $("lyrics").value = text;
-        $("lyrics").dispatchEvent(new Event("input"));
-      };
-      reader.readAsText(f);
+      const r = new FileReader();
+      r.onload = () => onText(String(r.result));
+      r.readAsText(f);
     };
     inp.click();
-  };
+  }
+
+  $("loadLyrics").onclick = () =>
+    pickFile(".txt,.lrc,text/plain", (text) => {
+      // A plain .txt may still carry timestamps; strip them, this button is
+      // for starting fresh from words only.
+      $("lyrics").value = text.replace(/\[(\d+:)?\d+([.:]\d+)?\]/g, "").trim();
+      reparse();
+    });
+
+  // Load an .lrc WITH its timings, so an exported file can be re-opened and
+  // tweaked instead of being write-once.
+  $("loadLrc").onclick = () =>
+    pickFile(".lrc,text/plain", (text) => {
+      const found = [];
+      let title = "";
+      for (const raw of text.split(/\r?\n/)) {
+        const line = raw.trim();
+        if (!line) continue;
+        const ti = line.match(/^\[ti:(.*)\]$/i);
+        if (ti) { title = ti[1].trim(); continue; }
+        const re = /\[(?:(\d+):)?([0-5]?\d)(?:[.:](\d{1,3}))?\]/g;
+        const stamps = [];
+        let rest = line, m;
+        while ((m = re.exec(rest))) {
+          if (m.index !== 0) break;
+          const f = m[3] ? parseInt(m[3], 10) / Math.pow(10, m[3].length) : 0;
+          stamps.push((m[1] ? parseInt(m[1], 10) * 60 : 0) + parseInt(m[2], 10) + f);
+          rest = rest.slice(m[0].length);
+        }
+        if (stamps.length) for (const t of stamps) found.push({ text: rest.trim(), time: t });
+      }
+      if (!found.length) { setStatus("No timed lines found in that .lrc"); return; }
+      found.sort((a, b) => a.time - b.time);
+      lines.length = 0;
+      lines.push(...found);
+      current = 0;
+      $("lyrics").value = found.map((l) => l.text).join("\n");
+      if (title && !$("songTitle").value) $("songTitle").value = title;
+      save();
+      render();
+      setStatus("Loaded " + found.length + " timed lines", true);
+    });
 
   $("file").onchange = () => {
     const f = $("file").files[0];
     if (!f) return;
     audio.src = URL.createObjectURL(f);
     audio.load();
-    if (!$("songTitle").value) {
-      $("songTitle").value = f.name.replace(/\.[^.]+$/, "");
-    }
-    setStatus("Loaded " + f.name);
+    if (!$("songTitle").value) $("songTitle").value = f.name.replace(/\.[^.]+$/, "");
+    setStatus("Loaded " + f.name, true);
+    render();
   };
 
-  audio.addEventListener("loadedmetadata", () => { render(); });
+  $("songTitle").addEventListener("input", () => { save(); render(); });
+
+  // ---------- transport ----------
+  audio.addEventListener("loadedmetadata", () => {
+    $("dur").textContent = clock(audio.duration, 1);
+    render();
+  });
+  audio.addEventListener("play", render);
+  audio.addEventListener("pause", render);
+  audio.addEventListener("ended", () => setStatus("Ended — export when ready", true));
+
   audio.ontimeupdate = () => {
-    const d = audio.duration || 0;
-    $("time").textContent = fmt(audio.currentTime) + " / " + fmt(d);
+    $("time").textContent =
+      clock(audio.currentTime, 1) + " / " + clock(audio.duration, 1);
     if (previewing) {
-      // Follow the song: highlight the line whose stamp is most recent
       let idx = -1;
       for (let i = 0; i < lines.length; i++) {
         if (lines[i].time != null && lines[i].time <= audio.currentTime) idx = i;
@@ -332,22 +677,25 @@
 
   function togglePlay() {
     if (!audio.currentSrc && !audio.src) { setStatus("Load a song first."); return; }
-    if (audio.paused) { audio.play(); } else { audio.pause(); }
+    if (audio.paused) audio.play().catch(() => setStatus("Playback blocked — press play."));
+    else audio.pause();
   }
 
   function tap() {
     if ($("tapBtn").disabled) return;
-    if (audio.paused) { setStatus("Press Space to play — tap while the line is being sung."); return; }
+    if (audio.paused) { setStatus("Press Space to play — tap while the line is sung."); return; }
     if (current >= lines.length) { setStatus("Past the last line."); return; }
     lines[current].time = audio.currentTime;
     current = Math.min(current + 1, lines.length - 1);
+    save();
     render();
   }
 
   function nudge(delta) {
     const ln = lines[current];
-    if (!ln || ln.time == null) { setStatus("Selected line has no stamp to adjust."); return; }
+    if (!ln || ln.time == null) { setStatus("That line has no stamp yet — tap it first."); return; }
     ln.time = Math.max(0, ln.time + delta);
+    save();
     render();
   }
 
@@ -355,6 +703,7 @@
     const ln = lines[current];
     if (!ln || ln.time == null) return;
     ln.time = null;
+    save();
     render();
   }
 
@@ -362,7 +711,6 @@
     if (!lines.some((l) => l.time != null)) { setStatus("Stamp some lines first."); return; }
     previewing = !previewing;
     document.body.classList.toggle("previewing", previewing);
-    $("previewBtn").textContent = previewing ? "⏻ Exit preview (P)" : "👁 Preview (P)";
     if (previewing) {
       let idx = -1;
       for (let i = 0; i < lines.length; i++) {
@@ -373,32 +721,43 @@
     render();
   }
 
+  // ---------- export ----------
   function exportLrc() {
     const stamped = lines.filter((l) => l.time != null);
     if (!stamped.length) return;
-    let lrc = "";
+
     const title = $("songTitle").value.trim();
+    let lrc = "";
     if (title) lrc += "[ti:" + title + "]\n";
-    lines.forEach((ln) => {
-      if (ln.time == null) return;
-      const m = Math.floor(ln.time / 60);
-      const rest = ln.time - m * 60;
-      lrc += "[" + String(m).padStart(2, "0") + ":" + rest.toFixed(2).padStart(5, "0") + "]" + ln.text + "\n";
-    });
-    const blob = new Blob([lrc], { type: "text/plain" });
+    let total = 0;
+    stamped.forEach((ln) => { lrc += lrcStamp(ln.time) + ln.text + "\n"; total++; });
+
+    const blob = new Blob([lrc], { type: "text/plain;charset=utf-8" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = (title || "lyrics") + ".lrc";
+    a.download = (title || "lyrics").replace(/[\\/:*?"<>|]/g, "-") + ".lrc";
     a.click();
-    setStatus("Exported " + a.download);
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+
+    const missing = lines.length - total;
+    setStatus(
+      missing
+        ? "Exported " + total + " lines — " + missing + " still unstamped"
+        : "Exported " + total + " lines",
+      !missing
+    );
   }
 
+  // ---------- wiring ----------
   $("tapBtn").onclick = tap;
   $("previewBtn").onclick = togglePreview;
   $("exportBtn").onclick = exportLrc;
   $("clearBtn").onclick = () => {
+    if (!lines.some((l) => l.time != null)) return;
+    if (!confirm("Clear every timing? The lyrics stay.")) return;
     lines.forEach((l) => (l.time = null));
     current = 0;
+    save();
     render();
   };
 
@@ -406,21 +765,26 @@
     const tag = e.target.tagName;
     if (tag === "TEXTAREA" || tag === "INPUT" || e.target.isContentEditable) return;
     switch (e.code) {
-      case "Space":      e.preventDefault(); togglePlay(); break;
-      case "Enter":      e.preventDefault(); tap(); break;
-      case "ArrowUp":    e.preventDefault(); if (current > 0) { current--; render(); } break;
-      case "ArrowDown":  e.preventDefault(); if (current < lines.length - 1) { current++; render(); } break;
-      case "ArrowLeft":  e.preventDefault(); audio.currentTime = Math.max(0, audio.currentTime - 3); break;
-      case "ArrowRight": e.preventDefault(); audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 3); break;
-      case "Comma":      e.preventDefault(); nudge(e.shiftKey ? -0.5 : -0.1); break;
-      case "Period":     e.preventDefault(); nudge(e.shiftKey ? 0.5 : 0.1); break;
-      case "Backspace":  e.preventDefault(); clearStamp(); break;
-      case "KeyP":       e.preventDefault(); togglePreview(); break;
-      case "KeyE":       e.preventDefault(); exportLrc(); break;
-      case "Escape":     if (previewing) { e.preventDefault(); togglePreview(); } break;
+      case "Space":     e.preventDefault(); togglePlay(); break;
+      case "Enter":     e.preventDefault(); tap(); break;
+      case "ArrowUp":   e.preventDefault(); if (current > 0) { current--; render(); } break;
+      case "ArrowDown": e.preventDefault(); if (current < lines.length - 1) { current++; render(); } break;
+      // num() around the seek bound: audio.duration is NaN before metadata
+      // loads, and Math.min(NaN || 0, x) was snapping the playhead to 0.
+      case "ArrowLeft":  e.preventDefault(); audio.currentTime = Math.max(0, num(audio.currentTime) - 3); break;
+      case "ArrowRight": e.preventDefault(); audio.currentTime = Math.min(num(audio.duration) || num(audio.currentTime) + 3, num(audio.currentTime) + 3); break;
+      case "Comma":     e.preventDefault(); nudge(e.shiftKey ? -0.5 : -0.1); break;
+      case "Period":    e.preventDefault(); nudge(e.shiftKey ? 0.5 : 0.1); break;
+      case "Backspace": e.preventDefault(); clearStamp(); break;
+      case "KeyP":      e.preventDefault(); togglePreview(); break;
+      case "KeyE":      e.preventDefault(); exportLrc(); break;
+      case "Escape":    if (previewing) { e.preventDefault(); togglePreview(); } break;
     }
   });
 
+  window.addEventListener("beforeunload", save);
+
+  if (loadSaved()) setStatus("Restored your last session", true);
   render();
 })();
 </script>
