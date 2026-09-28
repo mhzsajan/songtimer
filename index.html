@@ -428,6 +428,11 @@
       <button id="freshBtn" type="button">Start fresh, keep nothing</button>
       <button id="freshAudioBtn" type="button">Start fresh, load a song</button>
       <button id="freshLyricsBtn" type="button">Start fresh, load lyrics</button>
+      <button id="backupGoBtn" type="button" class="primary" hidden>
+        Save current .lrc, then continue
+      </button>
+      <button id="discardGoBtn" type="button" hidden>Discard it and continue</button>
+      <button id="cancelGoBtn" type="button" hidden>Cancel — keep this session</button>
     </div>
     <p class="modal-note">
       Timings and lyrics are saved in this browser, so you can close the tab and
@@ -714,15 +719,22 @@
     // then be offered back as if it were real work.
     if (!lines.length) return;
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      try {
-        localStorage.setItem(STORE, JSON.stringify({
-          title: $("songTitle").value,
-          lyrics: $("lyrics").value,
-          lines: lines.map((l) => ({ text: l.text, time: l.time })),
-        }));
-      } catch (e) { /* private mode / quota: not fatal */ }
-    }, 250);
+    saveTimer = setTimeout(writeNow, 250);
+  }
+
+  // Flush the live session to storage straight away, so a dialog opened right
+  // after an edit describes what is actually on screen rather than what was
+  // on screen 250ms ago.
+  function writeNow() {
+    clearTimeout(saveTimer);
+    if (!lines.length) return;
+    try {
+      localStorage.setItem(STORE, JSON.stringify({
+        title: $("songTitle").value,
+        lyrics: $("lyrics").value,
+        lines: lines.map((l) => ({ text: l.text, time: l.time })),
+      }));
+    } catch (e) { /* private mode / quota: not fatal */ }
   }
 
   function readSaved() {
@@ -955,14 +967,23 @@
     pickFile(".txt,.lrc,text/plain", (text) => {
       // A plain .txt may still carry timestamps; strip them, this button is
       // for starting fresh from words only.
-      $("lyrics").value = text.replace(/\[(\d+:)?\d+([.:]\d+)?\]/g, "").trim();
-      reparse();
+      withReplaceGuard("different lyrics", () => {
+        $("lyrics").value = text.replace(/\[(\d+:)?\d+([.:]\d+)?\]/g, "").trim();
+        reparse();
+      }, true);
     });
 
   // Load an .lrc WITH its timings, so an exported file can be re-opened and
   // tweaked instead of being write-once.
   $("loadLrc").onclick = () =>
     pickFile(".lrc,text/plain", (text) => {
+      withReplaceGuard("a different .lrc", () => applyLrcText(text), true);
+    });
+
+  // Splits a multi-stamp .lrc back into one row per occurrence, so a chorus
+  // exported as one entry with four timestamps comes back as four rows you can
+  // stamp and nudge individually.
+  function applyLrcText(text) {
       const found = [];
       let title = "";
       for (const raw of text.split(/\r?\n/)) {
@@ -991,16 +1012,18 @@
       save();
       render();
       setStatus("Loaded " + found.length + " timed lines", true);
-    });
+  }
 
   $("file").onchange = () => {
     const f = $("file").files[0];
     if (!f) return;
-    audio.src = URL.createObjectURL(f);
-    audio.load();
-    if (!$("songTitle").value) $("songTitle").value = f.name.replace(/\.[^.]+$/, "");
-    setStatus("Loaded " + f.name, true);
-    render();
+    withReplaceGuard("a different song", () => {
+      audio.src = URL.createObjectURL(f);
+      audio.load();
+      if (!$("songTitle").value) $("songTitle").value = f.name.replace(/\.[^.]+$/, "");
+      setStatus("Loaded " + f.name, true);
+      render();
+    }, false);
   };
 
   $("songTitle").addEventListener("input", () => { save(); render(); });
@@ -1223,7 +1246,6 @@
   }
 
   function applyLyrics(item, hasSync) {
-    pushUndo();
     let rows = [];
     if (hasSync) {
       rows = parseSyncedLyrics(item.syncedLyrics);
@@ -1236,6 +1258,21 @@
     }
     if (!rows.length) { setSearch("That entry had no usable lines."); return; }
 
+    // A search result must never land on top of real timings without asking.
+    // LRCLIB often returns a different band with the same words, so this is
+    // only ever a candidate - it is never applied silently.
+    const label = ((item.trackName || item.name || "").trim()) ||
+      "that search result";
+    withReplaceGuard(
+      "“" + label + "” from search",
+      () => commitLyrics(rows, item, hasSync),
+      true,
+      "The title changes to match the imported lyrics."
+    );
+  }
+
+  function commitLyrics(rows, item, hasSync) {
+    pushUndo();
     lines.length = 0;
     lines.push(...rows);
     current = 0;
@@ -1243,13 +1280,16 @@
     // it directly (rather than dispatching input) avoids reparse re-deriving
     // the timings we just imported.
     $("lyrics").value = rows.map((r) => r.text).join("\n");
-    if (!$("songTitle").value) {
-      // Many entries already carry the artist inside the track name
+    // The user has just confirmed that these are the right lyrics, so the
+    // title follows them too. Leaving the old title would export an .lrc whose
+    // [ti:] names a different song than the words inside it.
+    const track = (item.trackName || "").trim();
+    const artist = (item.artistName || "").trim();
+    if (track || artist) {
+      // Many entries carry the artist inside the track name already
       // ("Chahana eutai mero Nabin K Bhattarai — Nabin K Bhattarai"). Only
-      // append the artist when the title does not already mention them, and
+      // append the artist when the title does not already mention it, and
       // never emit a dangling " — ".
-      const track = (item.trackName || "").trim();
-      const artist = (item.artistName || "").trim();
       const t = track.toLowerCase(), a = artist.toLowerCase();
       $("songTitle").value =
         !track ? artist
@@ -1452,6 +1492,9 @@
   window.addEventListener("beforeunload", save);
 
   // ---------- restore / new session ----------
+  // Set while the replace-guard dialog is open; run once the user chooses.
+  let _afterReplace = null;
+
   function openRestoreDialog() {
     const d = readSaved();
     if (d) {
@@ -1470,13 +1513,76 @@
         "Nothing is saved in this browser. This clears the lyrics, the timings and the loaded song.";
       $("resumeBtn").hidden = true;
     }
+    $("backupGoBtn").hidden = true;
+    $("discardGoBtn").hidden = true;
+    $("cancelGoBtn").hidden = true;
     $("restoreModal").hidden = false;
     ($("resumeBtn").hidden ? $("freshBtn") : $("resumeBtn")).focus();
   }
 
   function closeRestoreDialog() {
     $("restoreModal").hidden = true;
+    _afterReplace = null;
   }
+
+  // Guards every path that would overwrite work in progress: a new song, new
+  // .txt / .lrc lyrics, or a search result. Without this, picking the wrong
+  // file silently threw away every stamped timing.
+  //
+  // Offers to export the current .lrc first, so the work is recoverable
+  // rather than merely confirmable.
+  function withReplaceGuard(what, fn, clearsLyrics, note) {
+    const stamped = lines.filter((l) => l.time != null).length;
+    if (!stamped) { fn(); return; }        // nothing at risk
+    _afterReplace = fn;
+    const name = $("songTitle").value.trim();
+    $("restoreTitle").textContent = clearsLyrics
+      ? "Replace the lyrics in progress?"
+      : "Load a different song?";
+
+    // Be accurate about what actually happens. Swapping the audio leaves the
+    // lyrics and timings alone; loading lyrics replaces them. Claiming both
+    // wipe everything would be wrong in one direction and alarming in the other.
+    $("restoreSummary").textContent =
+      (clearsLyrics
+        ? "Loading " + what + " replaces your " + lines.length + " lines and " +
+          stamped + " timing" + (stamped > 1 ? "s" : "") +
+          (name ? " from “" + name + "”" : "") + "."
+        : "Your " + lines.length + " lines and " + stamped +
+          " timing" + (stamped > 1 ? "s" : "") +
+          (name ? " from “" + name + "”" : "") +
+          " will be kept — only the audio changes. If this is a different take, " +
+          "use Clear timings afterwards to re-time from scratch.") +
+      (note ? " " + note : "");
+
+    $("resumeBtn").hidden = true;
+    $("freshBtn").hidden = true;
+    $("freshAudioBtn").hidden = true;
+    $("freshLyricsBtn").hidden = true;
+    $("backupGoBtn").hidden = false;
+    $("discardGoBtn").hidden = false;
+    $("discardGoBtn").textContent = clearsLyrics
+      ? "Discard them and load the new lyrics"
+      : "Load the song, keep my timings";
+    $("cancelGoBtn").hidden = false;
+    $("restoreModal").hidden = false;
+    $("backupGoBtn").focus();
+  }
+
+  $("backupGoBtn").onclick = () => {
+    exportLrc();                 // download the work first
+    const go = _afterReplace;
+    _afterReplace = null;
+    closeRestoreDialog();
+    if (go) go();
+  };
+  $("discardGoBtn").onclick = () => {
+    const go = _afterReplace;
+    _afterReplace = null;
+    closeRestoreDialog();
+    if (go) go();
+  };
+  $("cancelGoBtn").onclick = closeRestoreDialog;
 
   $("resumeBtn").onclick = () => {
     const d = readSaved();
@@ -1510,7 +1616,10 @@
     });
   };
 
-  $("newBtn").onclick = openRestoreDialog;
+  // Flush first: the dialog reports what is saved, and typing is debounced by
+  // 250ms - without this a New pressed straight after an edit would describe a
+  // stale session.
+  $("newBtn").onclick = () => { writeNow(); openRestoreDialog(); };
   $("restoreModal").addEventListener("click", (e) => {
     if (e.target === $("restoreModal")) closeRestoreDialog();   // backdrop
   });
