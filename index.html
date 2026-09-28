@@ -73,6 +73,17 @@
     z-index: 5;
     box-shadow: 0 6px 24px rgba(0, 0, 0, .35);
   }
+  /* Wide screens: park the player on the side so lyrics scroll fully visible */
+  @media (min-width: 1200px) {
+    body { padding-right: 412px; }
+    #playerCard {
+      position: fixed;
+      top: 18px;
+      right: 18px;
+      width: 378px;
+      margin: 0;
+    }
+  }
   .list {
     width: 100%;
     columns: 320px;
