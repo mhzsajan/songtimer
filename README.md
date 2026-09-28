@@ -3,7 +3,10 @@
 Tap lyric timings while a song plays, adjust them, and export standard `.lrc`
 synced lyrics — usable in AbleSet, alsmuse, and any LRC-compatible player.
 
-**➡ [Open Song Timer](https://mhzsajan.github.io/song-timer/)**
+This repo doubles as the user page for GitHub Pages, so the app lives at the
+shortest possible URL.
+
+**➡ [Open Song Timer](https://mhzsajan.github.io/)**
 
 No install, no server, no upload: it is a single HTML page that runs entirely
 in your browser. Your audio never leaves your device.
