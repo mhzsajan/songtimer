@@ -169,6 +169,29 @@
 
   .hint { color: var(--faint); font-size: 12.5px; margin-top: 10px; line-height: 1.55; }
 
+  /* ── speed + seek ────────────────────────────────────────── */
+  .ctl {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 12px; flex-wrap: wrap;
+  }
+  .ctl-label {
+    font-size: 11px; font-weight: 650; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--faint);
+    width: 46px; flex: none;
+  }
+  .seg {
+    display: inline-flex; gap: 2px; padding: 3px;
+    background: var(--bg); border: 1px solid var(--line-2); border-radius: 8px;
+  }
+  .seg button {
+    background: transparent; border: 0; border-radius: 6px;
+    padding: 5px 10px; color: var(--dim);
+    font: 500 12.5px/1 var(--mono); font-variant-numeric: tabular-nums;
+  }
+  .seg button:hover { background: var(--surface-2); color: var(--text); }
+  .seg button.is-on { background: var(--cyan-deep); color: #eafeff; }
+  .seek { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+
   /* ── keyboard reference: collapsed, it is a reference ──── */
   details.keys summary {
     cursor: pointer; color: var(--dim);
@@ -237,6 +260,7 @@
     font: 500 12px/1.4 var(--mono);
   }
   .nudge:hover { color: var(--text); border-color: var(--cyan); }
+  .nudge.jump { color: var(--cyan); border-color: rgba(34, 211, 238, .35); }
   .line.current .nudge { display: inline-block; }
   .line:not(.current) .nudge { display: none; }
 
@@ -316,7 +340,9 @@
         <span><kbd>←</kbd><kbd>→</kbd>seek ∓3s</span>
         <span><kbd>,</kbd><kbd>.</kbd>nudge ∓0.1s</span>
         <span><kbd>⇧</kbd>+<kbd>,</kbd><kbd>.</kbd>∓0.5s</span>
-        <span><kbd>⌫</kbd>clear stamp</span>
+        <span><kbd>⌫</kbd>clear + rewind</span>
+        <span><kbd>J</kbd>jump to line</span>
+        <span><kbd>M</kbd>mute</span>
         <span><kbd>P</kbd>preview</span>
         <span><kbd>E</kbd>export .lrc</span>
         <span><kbd>Esc</kbd>exit preview</span>
@@ -368,7 +394,34 @@
           <button id="previewBtn" type="button" disabled>Preview</button>
           <button id="clearBtn" type="button" class="ghost">Clear timings</button>
         </div>
-        <p class="hint">Space plays, Enter stamps. Nudge with <kbd>,</kbd> / <kbd>.</kbd> — hold Shift for ±0.5s.</p>
+
+        <!-- playback rate: a listening aid only. currentTime still reports true
+             song position, so tapping while slowed stamps the correct time. -->
+        <div class="ctl">
+          <span class="ctl-label">Speed</span>
+          <div class="seg" id="speedSeg" role="group" aria-label="Playback speed">
+            <button type="button" data-rate="0.5">0.5&times;</button>
+            <button type="button" data-rate="0.75">0.75&times;</button>
+            <button type="button" data-rate="1" class="is-on">1&times;</button>
+            <button type="button" data-rate="1.25">1.25&times;</button>
+          </div>
+        </div>
+
+        <div class="ctl">
+          <span class="ctl-label">Seek</span>
+          <div class="seek">
+            <button type="button" class="tiny" data-seek="-3">&minus;3</button>
+            <button type="button" class="tiny" data-seek="-1">&minus;1</button>
+            <button type="button" class="tiny" data-seek="-0.5">&minus;.5</button>
+            <button type="button" class="tiny" data-seek="0.5">+.5</button>
+            <button type="button" class="tiny" data-seek="1">+1</button>
+            <button type="button" class="tiny" data-seek="3">+3</button>
+            <button type="button" class="tiny ghost" id="muteBtn"
+                    title="Mute the audio (M)">Mute</button>
+          </div>
+        </div>
+
+        <p class="hint">Space plays, Enter stamps. Nudge with <kbd>,</kbd> / <kbd>.</kbd> — hold Shift for ±0.5s. Slowing down does not change the timings you stamp.</p>
       </div>
 
       <div class="card">
@@ -528,6 +581,14 @@
       }
 
       if (i === current && editing !== i) {
+        const j = document.createElement("button");
+        j.className = "nudge jump";
+        j.type = "button";
+        j.textContent = "▶";
+        j.title = "Jump the playhead to this line (J)";
+        j.onclick = (e) => { e.stopPropagation(); jumpToLine(); };
+        stamp.appendChild(j);
+
         for (const [label, delta] of [["−.5", -0.5], ["−", -0.1], ["+", 0.1], [".5", 0.5]]) {
           const b = document.createElement("button");
           b.className = "nudge";
@@ -734,10 +795,47 @@
 
   function clearStamp() {
     const ln = lines[current];
-    if (!ln || ln.time == null) return;
+    // Rewind to where the line was BEFORE clearing, so the loop is
+    // Backspace -> Space -> tap again, with no reaching for the scrub bar.
+    // If the line was never stamped, still move the playhead to the most
+    // recent stamped line above it, so you can hear where you are.
+    if (!ln || ln.time == null) {
+      const t = nearestStampedTime(current);
+      if (t != null) {
+        seekTo(t);
+        setStatus("Jumped to " + clock(t), true);
+      }
+      return;
+    }
+    const was = ln.time;
     ln.time = null;
+    seekTo(was);
     save();
     render();
+    setStatus("Cleared — playhead back at " + clock(was) + ", press Space to replay");
+  }
+
+  // Most recent stamped time at or above `from`, so a jump always lands
+  // somewhere musical even when the selected line has no stamp yet.
+  function nearestStampedTime(from) {
+    for (let i = Math.min(from, lines.length - 1); i >= 0; i--) {
+      if (lines[i] && lines[i].time != null) return lines[i].time;
+    }
+    return null;
+  }
+
+  function seekTo(t) {
+    if (t == null) return;
+    audio.currentTime = Math.max(0, num(t));
+  }
+
+  // Non-destructive: move the playhead without touching the timing.
+  function jumpToLine() {
+    const ln = lines[current];
+    const t = (ln && ln.time != null) ? ln.time : nearestStampedTime(current);
+    if (t == null) { setStatus("No stamped line above this one to jump to."); return; }
+    seekTo(t);
+    setStatus("Jumped to " + clock(t), true);
   }
 
   function togglePreview() {
@@ -753,6 +851,43 @@
     }
     render();
   }
+
+  // ---------- speed / seek / mute ----------
+  // Speed is a listening aid only: currentTime still reports true song
+  // position, so tapping while slowed stamps the correct timestamp.
+  document.querySelectorAll("#speedSeg button").forEach((b) => {
+    b.onclick = () => {
+      const r = parseFloat(b.dataset.rate);
+      if (!isFinite(r) || r <= 0) return;
+      audio.playbackRate = r;
+      document.querySelectorAll("#speedSeg button")
+        .forEach((x) => x.classList.toggle("is-on", x === b));
+    };
+  });
+  // Some browsers refuse rates far from 1 on <audio> without a pitch trick;
+  // if a rate is rejected, fall back rather than silently ignoring the click.
+  audio.addEventListener("ratechange", () => {
+    if (Math.abs(audio.playbackRate - 1) > 0.01 && audio.playbackRate === 1) {
+      setStatus("This browser would not take that speed.");
+    }
+  });
+
+  document.querySelectorAll("[data-seek]").forEach((b) => {
+    b.onclick = () => {
+      const d = parseFloat(b.dataset.seek);
+      if (!isFinite(d)) return;
+      if (!audio.currentSrc && !audio.src) { setStatus("Load a song first."); return; }
+      seekTo(num(audio.currentTime) + d);
+    };
+  });
+
+  function toggleMute() {
+    audio.muted = !audio.muted;
+    const b = $("muteBtn");
+    b.textContent = audio.muted ? "Unmute" : "Mute";
+    b.classList.toggle("primary", audio.muted);
+  }
+  $("muteBtn").onclick = toggleMute;
 
   // ---------- export ----------
   function exportLrc() {
@@ -809,6 +944,8 @@
       case "Comma":     e.preventDefault(); nudge(e.shiftKey ? -0.5 : -0.1); break;
       case "Period":    e.preventDefault(); nudge(e.shiftKey ? 0.5 : 0.1); break;
       case "Backspace": e.preventDefault(); clearStamp(); break;
+      case "KeyJ":      e.preventDefault(); jumpToLine(); break;
+      case "KeyM":      e.preventDefault(); toggleMute(); break;
       case "KeyP":      e.preventDefault(); togglePreview(); break;
       case "KeyE":      e.preventDefault(); exportLrc(); break;
       case "Escape":    if (previewing) { e.preventDefault(); togglePreview(); } break;
