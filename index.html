@@ -438,8 +438,9 @@
       Timings and lyrics are saved in this browser, so you can close the tab and
       come back. Audio is never stored — browsers do not allow it — so you
       re-choose the song either way.<br>
-      Pressing <strong>F5</strong> starts completely fresh and discards the
-      saved session.
+      <strong>F5</strong> brings this box back with Start fresh already selected:
+      press <strong>Enter</strong> for a clean slate, or choose Continue to keep
+      the work.
     </p>
   </div>
 </div>
@@ -1467,6 +1468,10 @@
       return;
     }
     const tag = e.target.tagName;
+    // While the dialog is up it owns Enter and Space. Without this, Enter on
+    // the focused button would be preventDefault()'d and stamp a lyric line
+    // instead of pressing the button.
+    if (!$("restoreModal").hidden) return;
     if (tag === "TEXTAREA" || tag === "INPUT" || e.target.isContentEditable) return;
     switch (e.code) {
       case "Space":     e.preventDefault(); togglePlay(); break;
@@ -1495,20 +1500,30 @@
   // Set while the replace-guard dialog is open; run once the user chooses.
   let _afterReplace = null;
 
-  function openRestoreDialog() {
+  // `refresh` marks an F5 arrival, where starting over is the expected action:
+  // "Start fresh" is the primary button and holds focus, so Enter - or a
+  // single click - gives a clean slate while the saved work is still one
+  // choice away instead of being thrown away unasked.
+  function openRestoreDialog(refresh) {
     const d = readSaved();
     if (d) {
       const stamped = d.lines.filter((l) => l.time != null).length;
       const what = d.title ? "“" + d.title + "”" : "an untitled song";
-      $("restoreTitle").textContent = stamped
-        ? "Continue " + what + "?"
-        : "You have unsaved lyrics for " + what;
-      $("restoreSummary").textContent = d.lines.length + " lines, " +
+      const counts = d.lines.length + " lines, " +
         stamped + " already timed" +
         (stamped === 0 ? " — nothing stamped yet." : ".");
+      $("restoreTitle").textContent = refresh
+        ? "Reloading — start fresh?"
+        : stamped
+          ? "Continue " + what + "?"
+          : "You have unsaved lyrics for " + what;
+      $("restoreSummary").textContent = refresh
+        ? what + " is saved in this browser: " + counts +
+          " Enter starts fresh; choose Continue to pick up where you left off."
+        : counts;
       $("resumeBtn").hidden = false;
     } else {
-      $("restoreTitle").textContent = "Start a new session";
+      $("restoreTitle").textContent = refresh ? "Start fresh" : "Start a new session";
       $("restoreSummary").textContent =
         "Nothing is saved in this browser. This clears the lyrics, the timings and the loaded song.";
       $("resumeBtn").hidden = true;
@@ -1517,7 +1532,15 @@
     $("discardGoBtn").hidden = true;
     $("cancelGoBtn").hidden = true;
     $("restoreModal").hidden = false;
-    ($("resumeBtn").hidden ? $("freshBtn") : $("resumeBtn")).focus();
+    setPrimary(refresh || $("resumeBtn").hidden ? "freshBtn" : "resumeBtn");
+    $(refresh || $("resumeBtn").hidden ? "freshBtn" : "resumeBtn").focus();
+  }
+
+  // The dialog has two jobs - continue, or start over - and which one is
+  // "the" answer depends on how you arrived. Only one can look primary.
+  function setPrimary(id) {
+    $("resumeBtn").classList.toggle("primary", id === "resumeBtn");
+    $("freshBtn").classList.toggle("primary", id === "freshBtn");
   }
 
   function closeRestoreDialog() {
@@ -1628,12 +1651,11 @@
     if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeRestoreDialog(); }
   });
 
-  // First run: ask instead of silently restoring. render() first so the
-  // dialog describes real numbers.
-  //
-  // A browser REFRESH is treated as "I want a clean slate" - the saved session
-  // is dropped and no dialog appears. Arriving by navigating (typed URL, new
-  // tab, link) still offers the work, which is the case autosave exists for.
+  // A refresh opens the dialog rather than silently discarding: "Start fresh"
+  // is already focused, so Enter still gives a clean slate, but a mistyped F5
+  // no longer throws away a half-timed song. Arriving by navigating (typed URL,
+  // new tab, link) offers the same work with "Continue" as the answer, since
+  // that is the case autosave exists for.
   var navType = "navigate";
   try {
     var entries = performance.getEntriesByType
@@ -1641,11 +1663,8 @@
     if (entries && entries[0] && entries[0].type) navType = entries[0].type;
   } catch (e) { /* default to offering the restore */ }
 
-  var wasReload = navType === "reload";
-  if (wasReload) forgetSaved();
-
   render();
-  if (!wasReload && readSaved()) openRestoreDialog();
+  if (readSaved() || navType === "reload") openRestoreDialog(navType === "reload");
 })();
 </script>
 </body>
