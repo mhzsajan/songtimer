@@ -430,8 +430,11 @@
       <button id="freshLyricsBtn" type="button">Start fresh, load lyrics</button>
     </div>
     <p class="modal-note">
-      Timings and lyrics are saved in this browser. Audio is never stored —
-      browsers do not allow it — so you re-choose the song either way.
+      Timings and lyrics are saved in this browser, so you can close the tab and
+      come back. Audio is never stored — browsers do not allow it — so you
+      re-choose the song either way.<br>
+      Pressing <strong>F5</strong> starts completely fresh and discards the
+      saved session.
     </p>
   </div>
 </div>
@@ -707,6 +710,9 @@
   // forgot about is worse than an obvious prompt.
   let saveTimer = null;
   function save() {
+    // Nothing worth keeping yet - do not write an empty session that would
+    // then be offered back as if it were real work.
+    if (!lines.length) return;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       try {
@@ -1515,8 +1521,22 @@
 
   // First run: ask instead of silently restoring. render() first so the
   // dialog describes real numbers.
+  //
+  // A browser REFRESH is treated as "I want a clean slate" - the saved session
+  // is dropped and no dialog appears. Arriving by navigating (typed URL, new
+  // tab, link) still offers the work, which is the case autosave exists for.
+  var navType = "navigate";
+  try {
+    var entries = performance.getEntriesByType
+      ? performance.getEntriesByType("navigation") : [];
+    if (entries && entries[0] && entries[0].type) navType = entries[0].type;
+  } catch (e) { /* default to offering the restore */ }
+
+  var wasReload = navType === "reload";
+  if (wasReload) forgetSaved();
+
   render();
-  if (readSaved()) openRestoreDialog();
+  if (!wasReload && readSaved()) openRestoreDialog();
 })();
 </script>
 </body>
