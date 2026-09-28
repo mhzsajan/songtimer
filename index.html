@@ -67,6 +67,12 @@
   #lyrics { width: 100%; min-height: 200px; resize: vertical; line-height: 1.5; }
   #player { width: 100%; margin-top: 10px; }
   .time { font-variant-numeric: tabular-nums; font-size: 1.05rem; color: #9aa5ff; }
+  #playerCard {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, .35);
+  }
   .list { width: 100%; max-width: 820px; }
   .line {
     display: flex; align-items: center; gap: 12px;
@@ -129,7 +135,7 @@
   </details>
 </div>
 
-<div class="card">
+<div class="card" id="playerCard">
   <div class="row">
     <label><input type="file" id="file" accept="audio/*"></label>
     <button id="loadLyrics" type="button">Load .txt lyrics</button>
@@ -144,7 +150,7 @@
     <button id="tapBtn" type="button" disabled>TAP (Enter) — stamp current line</button>
     <button id="previewBtn" type="button" disabled>👁 Preview (P)</button>
   </div>
-  <div class="hint">Enter stamps &amp; advances. Space plays/pauses. Nudge any stamp with , / . — Shift for ±0.5s.</div>
+  <div class="hint">Enter stamps &amp; advances. Space plays/pauses. Nudge with , / . — Shift for ±0.5s. Lyrics stay editable: fixing spellings keeps each line's timing.</div>
 </div>
 
 <div class="card">
@@ -216,6 +222,14 @@
     $("previewBtn").disabled = !audio.currentSrc && !audio.src ? true : !lines.some((l) => l.time != null);
     if (previewing && current < lines.length) {
       list.children[current].scrollIntoView({ block: "center", behavior: "smooth" });
+    } else if (list.children[current]) {
+      // While timing long lyrics, keep the active line in view — but never
+      // yank the page while the user is typing in the lyrics box.
+      const a = document.activeElement;
+      const typing = a && (a.tagName === "TEXTAREA" || a.tagName === "INPUT");
+      if (!typing) {
+        list.children[current].scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
     }
   }
 
@@ -227,10 +241,30 @@
 
   $("lyrics").addEventListener("input", () => {
     const fresh = parseLyrics($("lyrics").value);
-    const next = fresh.map((text, i) => ({
-      text,
-      time: lines[i] && lines[i].text === text ? lines[i].time : null,
-    }));
+    // Timing survival strategy (hybrid):
+    // 1. If a line's text matches an existing stamped line, keep that stamp
+    //    (handles insertions/deletions without shifting timings).
+    // 2. Otherwise, if a line sits at the same position as a stamped line,
+    //    keep that stamp (handles spelling/punctuation fixes).
+    // 3. Each old stamp is consumed at most once — no duplicated timings.
+    const usedTimes = new Set();
+    const byText = new Map();
+    lines.forEach((l) => {
+      if (l.time != null && !byText.has(l.text)) byText.set(l.text, l.time);
+    });
+    const textTimes = fresh.map((t) => {
+      const time = byText.has(t) && !usedTimes.has(byText.get(t)) ? byText.get(t) : null;
+      if (time != null) usedTimes.add(time);
+      return time;
+    });
+    const next = fresh.map((text, i) => {
+      let time = textTimes[i];
+      if (time == null && lines[i] && lines[i].time != null && !usedTimes.has(lines[i].time)) {
+        time = lines[i].time;
+      }
+      if (time != null) usedTimes.add(time);
+      return { text, time };
+    });
     lines.length = 0;
     lines.push(...next);
     current = 0;
