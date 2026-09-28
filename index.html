@@ -221,11 +221,14 @@
   .list { display: grid; gap: 2px; }
   .line {
     display: grid;
-    /* Wide enough for the timestamp PLUS the four nudge buttons, which only
-       appear on the current row. A 96px column made them overlap the lyric
-       text. Kept fixed (not auto) so timestamps stay vertically aligned down
-       the list, which is the whole point of showing them. */
-    grid-template-columns: 216px minmax(0, 1fr) auto;
+    /* Three real columns: timestamp | lyric | controls.
+       The controls used to live inside the timestamp column, but that track is
+       a fixed 216px and the jump button plus four nudges need 244px -- so the
+       content spilled 28px past the track and sat on top of the lyric text.
+       Giving the controls their own auto-sized column means they can never
+       collide, and the timestamp column can shrink back to its natural width
+       while staying vertically aligned down the list. */
+    grid-template-columns: 92px minmax(0, 1fr) auto;
     align-items: center; gap: 14px;
     padding: 10px 12px;
     border: 1px solid transparent;
@@ -242,6 +245,20 @@
   .line:not(.sung) .txt { color: var(--faint); }
 
   .stamp { display: flex; align-items: center; gap: 4px; }
+  .rowctl {
+    display: flex; align-items: center; gap: 4px;
+    justify-content: flex-end;
+  }
+  /* Explicit column placement rather than relying on DOM order. The controls
+     are appended before the lyric text, so without this they took the text's
+     column and left the lyric crushed into the narrow controls column. */
+  .stamp  { grid-column: 1; }
+  .txt    { grid-column: 2; }
+  .rowctl { grid-column: 3; }
+  /* Without flex:none the buttons shrink to fit and the controls get
+     squeezed into ~50px, which is what forced the overlap in the first
+     place. Their natural width is what sizes the auto column. */
+  .rowctl .nudge { flex: none; }
   .stamp .t {
     background: transparent; border: 1px solid transparent; color: var(--faint);
     padding: 3px 6px; border-radius: 6px; cursor: pointer;
@@ -270,7 +287,7 @@
      give the lyric text the width back. */
   @media (max-width: 720px) {
     .line { grid-template-columns: 84px minmax(0, 1fr); }
-    .line .nudge { display: none !important; }
+    .rowctl { display: none !important; }
   }
 
   .empty { color: var(--faint); font-size: 14px; padding: 22px 4px; text-align: center; }
@@ -385,6 +402,22 @@
     <!-- lyrics: the actual work -->
     <div class="main">
       <div class="card">
+        <div class="card-title"><span>Look up lyrics</span></div>
+        <p class="hint" style="margin-top:0; margin-bottom:10px;">
+          Search <b>LRCLIB</b>, a free open lyrics database — just like Google.
+          Songs marked <b>TIMED</b> come with the timing already on them, so you
+          only check the words.
+        </p>
+        <div class="row">
+          <input type="text" id="lyricSearch" placeholder="artist + song title"
+                 autocomplete="off">
+          <button id="searchBtn" type="button" class="primary">Search</button>
+        </div>
+        <div id="searchStatus" class="hint" style="margin-top:8px;"></div>
+        <div id="searchResults" class="results"></div>
+      </div>
+
+      <div class="card">
         <div class="card-title">
           <span>Lyrics — one line per sung line</span>
           <span id="lineCount" class="mono"></span>
@@ -473,22 +506,6 @@
           </button>
         </div>
         <p class="hint" id="offsetStatus">No shift applied.</p>
-      </div>
-
-      <div class="card">
-        <div class="card-title"><span>Look up lyrics</span></div>
-        <p class="hint" style="margin-top:0; margin-bottom:10px;">
-          Search LRCLIB, a free open lyrics database. If a song has
-          <b>timed</b> lyrics you get the timing too — then you only need to
-          check the words. Search like you would Google.
-        </p>
-        <div class="row">
-          <input type="text" id="lyricSearch" placeholder="artist + song title"
-                 autocomplete="off">
-          <button id="searchBtn" type="button" class="primary">Search</button>
-        </div>
-        <div id="searchStatus" class="hint" style="margin-top:8px;"></div>
-        <div id="searchResults" class="results"></div>
       </div>
 
       <div class="card">
@@ -701,13 +718,17 @@
       }
 
       if (i === current && editing !== i) {
+        // Controls live in their own grid column, not inside the stamp.
+        const ctl = document.createElement("span");
+        ctl.className = "rowctl";
+
         const j = document.createElement("button");
         j.className = "nudge jump";
         j.type = "button";
         j.textContent = "▶";
         j.title = "Jump the playhead to this line (J)";
         j.onclick = (e) => { e.stopPropagation(); jumpToLine(); };
-        stamp.appendChild(j);
+        ctl.appendChild(j);
 
         for (const [label, delta] of [["−.5", -0.5], ["−", -0.1], ["+", 0.1], [".5", 0.5]]) {
           const b = document.createElement("button");
@@ -716,8 +737,9 @@
           b.textContent = label;
           b.title = "Nudge " + (delta > 0 ? "+" : "") + delta + "s";
           b.onclick = (e) => { e.stopPropagation(); nudge(delta); };
-          stamp.appendChild(b);
+          ctl.appendChild(b);
         }
+        row.appendChild(ctl);
       }
 
       const txt = document.createElement("span");
