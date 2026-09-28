@@ -76,6 +76,8 @@
     display: flex; align-items: center; gap: 10px;
     color: var(--dim); font-size: 13px;
   }
+  .hist { display: flex; gap: 4px; }
+  .hist button { padding: 4px 8px; font-size: 12px; line-height: 1; }
   .bar {
     width: 130px; height: 5px; border-radius: 3px;
     background: var(--surface-2); overflow: hidden;
@@ -309,6 +311,29 @@
   .foot-links { display: flex; gap: 16px; font-size: 13px; }
   .foot-links a { color: var(--dim); }
   .foot-links a:hover { color: var(--cyan); }
+
+  /* ── lyric search ─────────────────────────────────────────── */
+  .results { display: grid; gap: 6px; margin-top: 10px; }
+  .result {
+    display: grid; grid-template-columns: 1fr auto; gap: 2px 10px;
+    align-items: center;
+    width: 100%; text-align: left;
+    padding: 9px 11px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+  .result:hover { background: var(--surface-2); border-color: var(--cyan); }
+  .result .r-title { font-size: 13.5px; color: var(--text); }
+  .result .r-artist { grid-column: 1; font-size: 12.5px; color: var(--dim); }
+  .result .r-dur { grid-row: 1; font: 500 12px var(--mono); color: var(--faint); }
+  .badge {
+    grid-row: 2; justify-self: start;
+    padding: 1px 6px; border-radius: 999px;
+    font: 600 10px/1.6 var(--sans); letter-spacing: .06em; text-transform: uppercase;
+  }
+  .badge.synced { background: rgba(45, 212, 191, .14); color: var(--teal); }
+  .badge.plain  { background: rgba(139, 152, 169, .14); color: var(--dim); }
 </style>
 </head>
 <body>
@@ -324,6 +349,10 @@
   <div class="now-title" id="nowTitle"></div>
   <div class="spacer"></div>
   <div class="progress">
+    <div class="hist">
+      <button id="undoBtn" type="button" title="Undo (Ctrl+Z)" disabled>↶</button>
+      <button id="redoBtn" type="button" title="Redo (Ctrl+Shift+Z)" disabled>↷</button>
+    </div>
     <span id="progressText" class="mono">0 / 0</span>
     <span class="bar"><i id="progressBar"></i></span>
   </div>
@@ -343,8 +372,10 @@
         <span><kbd>⌫</kbd>clear + rewind</span>
         <span><kbd>J</kbd>jump to line</span>
         <span><kbd>M</kbd>mute</span>
+        <span><kbd>⌃Z</kbd>undo · <kbd>⌃⇧Z</kbd>redo</span>
         <span><kbd>P</kbd>preview</span>
         <span><kbd>E</kbd>export .lrc</span>
+        <span><kbd>/</kbd>focus lyric search</span>
         <span><kbd>Esc</kbd>exit preview</span>
       </div>
     </details>
@@ -425,6 +456,42 @@
       </div>
 
       <div class="card">
+        <div class="card-title"><span>Whole song shift</span></div>
+        <p class="hint" style="margin-top:0; margin-bottom:10px;">
+          If every line is early or late — a count-in, a bar of silence before
+          the first vocal — move them all at once instead of nudging each one.
+        </p>
+        <div class="row">
+          <input type="text" id="offsetInput" class="mono" value="0.00"
+                 style="flex:0 0 92px;" aria-label="Offset in seconds">
+          <span class="hint" style="margin:0;">sec</span>
+          <button id="applyOffset" type="button" class="primary">Apply to all</button>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <button id="alignFirst" type="button">
+            Align first line to playhead
+          </button>
+        </div>
+        <p class="hint" id="offsetStatus">No shift applied.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span>Look up lyrics</span></div>
+        <p class="hint" style="margin-top:0; margin-bottom:10px;">
+          Search LRCLIB, a free open lyrics database. If a song has
+          <b>timed</b> lyrics you get the timing too — then you only need to
+          check the words. Search like you would Google.
+        </p>
+        <div class="row">
+          <input type="text" id="lyricSearch" placeholder="artist + song title"
+                 autocomplete="off">
+          <button id="searchBtn" type="button" class="primary">Search</button>
+        </div>
+        <div id="searchStatus" class="hint" style="margin-top:8px;"></div>
+        <div id="searchResults" class="results"></div>
+      </div>
+
+      <div class="card">
         <div class="card-title"><span>Export</span></div>
         <div class="row">
           <button id="exportBtn" type="button" class="primary" disabled>Export .lrc</button>
@@ -435,6 +502,10 @@
           set with one MIDI clip per line.<br>
           <b>Video</b> — feed the same file to the Remotion renderer for a transparent
           lyric overlay.
+          <br><br>Repeated lines are merged into a single entry with several
+          timestamps — <code>[00:10.00][01:20.00]chorus</code> — which is how
+          both tools expect a repeat, and reloading it here restores each
+          occurrence as its own row.
         </p>
       </div>
     </div>
@@ -463,6 +534,54 @@
   let current = 0;
   let previewing = false;
   let editing = -1;            // index of the timestamp being typed into
+
+  // ---------- undo / redo ----------
+  // Snapshot-based rather than command-based: the mutations here are bulk
+  // (retap a line, shift every stamp, clear the lot) and a snapshot is both
+  // simpler and impossible to get half-applied. Without this, a mistimed bulk
+  // shift meant re-tapping the whole song.
+  const UNDO_MAX = 80;
+  let undoStack = [];
+  let redoStack = [];
+  let lastEditAt = 0;
+
+  const snapshot = () =>
+    JSON.stringify(lines.map((l) => ({ text: l.text, time: l.time })));
+
+  function restore(snap) {
+    const data = JSON.parse(snap);
+    lines.length = 0;
+    lines.push(...data);
+    if (current >= lines.length) current = Math.max(0, lines.length - 1);
+    save();
+    render();
+  }
+
+  // `coalesce` merges rapid successive edits (typing in the lyrics box) into a
+  // single history entry, so undo steps back one meaningful change rather than
+  // one keystroke.
+  function pushUndo(coalesce) {
+    const now = Date.now();
+    if (coalesce && now - lastEditAt < 700) { lastEditAt = now; return; }
+    lastEditAt = now;
+    undoStack.push(snapshot());
+    if (undoStack.length > UNDO_MAX) undoStack.shift();
+    redoStack.length = 0;
+  }
+
+  function doUndo() {
+    if (!undoStack.length) { setStatus("Nothing to undo"); return; }
+    redoStack.push(snapshot());
+    restore(undoStack.pop());
+    setStatus("Undone — Ctrl+Shift+Z to redo", true);
+  }
+
+  function doRedo() {
+    if (!redoStack.length) { setStatus("Nothing to redo"); return; }
+    undoStack.push(snapshot());
+    restore(redoStack.pop());
+    setStatus("Redone", true);
+  }
 
   // ---------- formatting ----------
   // Guards NaN: audio.duration is NaN until metadata loads, and
@@ -545,6 +664,7 @@
         const commit = () => {
           const raw = box.value.trim();
           if (raw) {
+            pushUndo();
             const m = raw.match(/^(?:(\d+):)?(\d+(?:\.\d+)?)$/);
             if (m) {
               const v = m[1] ? parseInt(m[1], 10) * 60 + parseFloat(m[2]) : parseFloat(m[2]);
@@ -626,6 +746,8 @@
     $("tapBtn").disabled = !hasAudio || !lines.length;
     $("tapBtn").classList.toggle("armed", hasAudio && lines.length > 0);
     $("previewBtn").textContent = previewing ? "Exit preview" : "Preview";
+    $("undoBtn").disabled = !undoStack.length;
+    $("redoBtn").disabled = !redoStack.length;
 
     // keep the working line in view, but never yank the page mid-typing
     const a = document.activeElement;
@@ -654,6 +776,7 @@
   // stamped line, else if it sits at the same position as one, and each old
   // stamp is consumed at most once so nothing is duplicated.
   function reparse() {
+    pushUndo(true);            // coalesced: one undo step per editing burst
     const fresh = parseLyrics($("lyrics").value);
     const used = new Set();
     const byText = new Map();
@@ -779,6 +902,7 @@
     if ($("tapBtn").disabled) return;
     if (audio.paused) { setStatus("Press Space to play — tap while the line is sung."); return; }
     if (current >= lines.length) { setStatus("Past the last line."); return; }
+    pushUndo();
     lines[current].time = audio.currentTime;
     current = Math.min(current + 1, lines.length - 1);
     save();
@@ -788,6 +912,7 @@
   function nudge(delta) {
     const ln = lines[current];
     if (!ln || ln.time == null) { setStatus("That line has no stamp yet — tap it first."); return; }
+    pushUndo();
     ln.time = Math.max(0, ln.time + delta);
     save();
     render();
@@ -808,6 +933,7 @@
       return;
     }
     const was = ln.time;
+    pushUndo();
     ln.time = null;
     seekTo(was);
     save();
@@ -852,6 +978,191 @@
     render();
   }
 
+  // ---------- lyric lookup (LRCLIB) ----------
+  // A free, open lyrics database that serves CORS `*`, so it works straight
+  // from this static page with no proxy and no key.
+  //
+  // Results are always shown and always require a click. Auto-applying the
+  // first hit would be actively harmful: searching "the rhythm band" returns
+  // "P.I.M.P by The Bacao Rhythm & Steel Band" -- a completely different act.
+  const LRC_RE = /\[(?:(\d+):)?([0-5]?\d)(?:[.:](\d{1,3}))?\]/g;
+
+  function setSearch(msg, ok) {
+    const el = $("searchStatus");
+    el.textContent = msg || "";
+    el.className = "hint" + (ok ? " ok" : "");
+    el.style.color = ok ? "var(--teal)" : "";
+  }
+
+  function parseSyncedLyrics(raw) {
+    const out = [];
+    for (const line of String(raw).split(/\r?\n/)) {
+      const t = line.trim();
+      if (!t) continue;
+      const stamps = [];
+      let rest = t, m;
+      LRC_RE.lastIndex = 0;
+      while ((m = LRC_RE.exec(rest))) {
+        if (m.index !== 0) break;
+        const f = m[3] ? parseInt(m[3], 10) / Math.pow(10, m[3].length) : 0;
+        stamps.push((m[1] ? parseInt(m[1], 10) * 60 : 0) + parseInt(m[2], 10) + f);
+        rest = rest.slice(m[0].length);
+      }
+      const text = rest.trim();
+      // Skip instrumental markers like [00:12.00] and empty lead-ins.
+      if (!stamps.length || !text) continue;
+      for (const time of stamps) out.push({ text, time });
+    }
+    out.sort((a, b) => a.time - b.time);
+    return out;
+  }
+
+  function runSearch() {
+    const q = $("lyricSearch").value.trim();
+    const box = $("searchResults");
+    box.innerHTML = "";
+    if (!q) { setSearch("Type an artist and a title."); return; }
+
+    setSearch("Searching…");
+    $("searchBtn").disabled = true;
+
+    fetch("https://lrclib.net/api/search?q=" + encodeURIComponent(q))
+      .then((r) => {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then((data) => {
+        $("searchBtn").disabled = false;
+        if (!Array.isArray(data) || !data.length) {
+          setSearch("Nothing found for “" + q + "”. Try a different spelling.");
+          return;
+        }
+        // Timed results first: they save the most work.
+        const ordered = data.slice().sort((a, b) =>
+          (b.syncedLyrics ? 1 : 0) - (a.syncedLyrics ? 1 : 0));
+        setSearch(ordered.length + " result" + (ordered.length > 1 ? "s" : "") +
+                  " — pick the right one", true);
+
+        for (const item of ordered) {
+          const b = document.createElement("button");
+          b.className = "result";
+          b.type = "button";
+          const hasSync = !!item.syncedLyrics;
+          const dur = item.duration
+            ? Math.floor(item.duration / 60) + ":" +
+              String(Math.round(item.duration % 60)).padStart(2, "0")
+            : "";
+          b.innerHTML =
+            '<span class="r-title"></span>' +
+            '<span class="r-dur"></span>' +
+            '<span class="r-artist"></span>' +
+            '<span class="badge ' + (hasSync ? "synced" : "plain") + '"></span>';
+          // textContent, not innerHTML: these strings come from a remote API
+          b.querySelector(".r-title").textContent = item.trackName || "(untitled)";
+          b.querySelector(".r-dur").textContent = dur;
+          b.querySelector(".r-artist").textContent = item.artistName || "";
+          b.querySelector(".badge").textContent = hasSync ? "timed" : "words only";
+          b.onclick = () => applyLyrics(item, hasSync);
+          box.appendChild(b);
+        }
+      })
+      .catch((e) => {
+        $("searchBtn").disabled = false;
+        setSearch("Lookup failed (" + e.message + "). You can still type or paste lyrics.");
+      });
+  }
+
+  function applyLyrics(item, hasSync) {
+    pushUndo();
+    let rows = [];
+    if (hasSync) {
+      rows = parseSyncedLyrics(item.syncedLyrics);
+    } else {
+      rows = String(item.plainLyrics || "")
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l && !/^\[[^\]]*\]$/.test(l))
+        .map((text) => ({ text, time: null }));
+    }
+    if (!rows.length) { setSearch("That entry had no usable lines."); return; }
+
+    lines.length = 0;
+    lines.push(...rows);
+    current = 0;
+    // The textarea holds clean text; the timestamps live on `lines`. Writing
+    // it directly (rather than dispatching input) avoids reparse re-deriving
+    // the timings we just imported.
+    $("lyrics").value = rows.map((r) => r.text).join("\n");
+    if (!$("songTitle").value) {
+      // Many entries already carry the artist inside the track name
+      // ("Chahana eutai mero Nabin K Bhattarai — Nabin K Bhattarai"). Only
+      // append the artist when the title does not already mention them, and
+      // never emit a dangling " — ".
+      const track = (item.trackName || "").trim();
+      const artist = (item.artistName || "").trim();
+      const t = track.toLowerCase(), a = artist.toLowerCase();
+      $("songTitle").value =
+        !track ? artist
+        : (artist && t.indexOf(a) === -1) ? track + " — " + artist
+        : track;
+    }
+    $("searchResults").innerHTML = "";
+    save();
+    render();
+    setSearch(
+      hasSync
+        ? "Imported " + rows.length + " timed lines — play and check them, then nudge."
+        : "Imported " + rows.length + " lines of words only — tap the timings yourself.",
+      true
+    );
+  }
+
+  $("searchBtn").onclick = runSearch;
+  $("lyricSearch").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); runSearch(); }
+  });
+
+  // ---------- whole-song shift ----------
+  // Every recording has a different lead-in, so a whole song is often uniformly
+  // early or late. Nudging forty lines individually is the obvious wrong answer.
+  function shiftAll(delta) {
+    const stamped = lines.filter((l) => l.time != null);
+    if (!stamped.length) { setStatus("Stamp some lines first."); return; }
+    if (!delta) { setStatus("Offset is 0 — nothing to do."); return; }
+    pushUndo();
+    let clamped = 0;
+    for (const l of stamped) {
+      const next = l.time + delta;
+      if (next < 0) { clamped++; l.time = 0; } else { l.time = next; }
+    }
+    save();
+    render();
+    const sign = delta > 0 ? "+" : "";
+    setStatus(
+      "Shifted " + stamped.length + " lines by " + sign + delta.toFixed(2) + "s" +
+      (clamped ? " — " + clamped + " clamped at 0:00" : "") + ". Ctrl+Z to undo.",
+      !clamped
+    );
+  }
+
+  $("applyOffset").onclick = () => {
+    const v = parseFloat($("offsetInput").value);
+    if (!isFinite(v)) { setStatus("Offset must be a number, in seconds."); return; }
+    shiftAll(v);
+  };
+
+  // The one-tap version of the same thing: put the first line exactly where the
+  // playhead is, and carry everything else by the same amount.
+  $("alignFirst").onclick = () => {
+    if (!audio.currentSrc && !audio.src) { setStatus("Load a song first."); return; }
+    const first = lines.find((l) => l.time != null);
+    if (!first) { setStatus("Stamp some lines first."); return; }
+    const delta = num(audio.currentTime) - first.time;
+    if (Math.abs(delta) < 0.005) { setStatus("First line is already there.", true); return; }
+    shiftAll(delta);
+    setStatus("First line moved to " + clock(audio.currentTime) + ".", true);
+  };
+
   // ---------- speed / seek / mute ----------
   // Speed is a listening aid only: currentTime still reports true song
   // position, so tapping while slowed stamps the correct timestamp.
@@ -895,10 +1206,34 @@
     if (!stamped.length) return;
 
     const title = $("songTitle").value.trim();
+
+    // A chorus sung four times is four rows in the editor (so each can be
+    // stamped separately) but must be ONE .lrc line carrying four timestamps:
+    //   [00:10.00][01:20.00][02:30.00]chorus line
+    // Both consumers expect that -- AbleSet turns each timestamp into a clip,
+    // and the Remotion renderer already parses multi-stamp lines. Merging here
+    // is what makes the file round-trip: Load .lrc will bring it back as the
+    // four separate rows you started with.
+    const groups = [];
+    const byText = new Map();
+    for (const l of stamped) {
+      const key = l.text.trim();
+      if (!key) continue;
+      if (byText.has(key)) {
+        byText.get(key).times.push(l.time);
+      } else {
+        const g = { text: key, times: [l.time] };
+        byText.set(key, g);
+        groups.push(g);
+      }
+    }
+    groups.forEach((g) => g.times.sort((a, b) => a - b));
+
     let lrc = "";
     if (title) lrc += "[ti:" + title + "]\n";
-    let total = 0;
-    stamped.forEach((ln) => { lrc += lrcStamp(ln.time) + ln.text + "\n"; total++; });
+    for (const g of groups) {
+      lrc += g.times.map((t) => lrcStamp(t)).join("") + g.text + "\n";
+    }
 
     const blob = new Blob([lrc], { type: "text/plain;charset=utf-8" });
     const a = document.createElement("a");
@@ -907,13 +1242,12 @@
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 
-    const missing = lines.length - total;
-    setStatus(
-      missing
-        ? "Exported " + total + " lines — " + missing + " still unstamped"
-        : "Exported " + total + " lines",
-      !missing
-    );
+    const missing = lines.length - stamped.length;
+    const merged = stamped.length - groups.length;
+    let msg = "Exported " + groups.length + " lines from " + stamped.length + " stamps";
+    if (merged > 0) msg += " (" + merged + " repeat" + (merged > 1 ? "s" : "") + " merged)";
+    if (missing) msg += " — " + missing + " still unstamped";
+    setStatus(msg, !missing);
   }
 
   // ---------- wiring ----------
@@ -923,13 +1257,25 @@
   $("clearBtn").onclick = () => {
     if (!lines.some((l) => l.time != null)) return;
     if (!confirm("Clear every timing? The lyrics stay.")) return;
+    pushUndo();
     lines.forEach((l) => (l.time = null));
     current = 0;
     save();
     render();
   };
+  $("undoBtn").onclick = doUndo;
+  $("redoBtn").onclick = doRedo;
 
   document.addEventListener("keydown", (e) => {
+    // Undo/redo first, and they work even while typing in the lyrics box --
+    // they are the safety net for a mistimed bulk edit, which is exactly when
+    // you might be reaching for the textarea.
+    const meta = e.ctrlKey || e.metaKey;
+    if (meta && (e.code === "KeyZ" || e.code === "KeyY")) {
+      e.preventDefault();
+      if (e.shiftKey || e.code === "KeyY") doRedo(); else doUndo();
+      return;
+    }
     const tag = e.target.tagName;
     if (tag === "TEXTAREA" || tag === "INPUT" || e.target.isContentEditable) return;
     switch (e.code) {
@@ -946,6 +1292,7 @@
       case "Backspace": e.preventDefault(); clearStamp(); break;
       case "KeyJ":      e.preventDefault(); jumpToLine(); break;
       case "KeyM":      e.preventDefault(); toggleMute(); break;
+      case "Slash":     e.preventDefault(); $("lyricSearch").focus(); break;
       case "KeyP":      e.preventDefault(); togglePreview(); break;
       case "KeyE":      e.preventDefault(); exportLrc(); break;
       case "Escape":    if (previewing) { e.preventDefault(); togglePreview(); } break;

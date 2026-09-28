@@ -41,13 +41,44 @@ because there is only one set of numbers.
 
 ## Usage
 
-1. **Load a song** — any audio your browser can play
-2. **Load or type lyrics** — one sung line per line; `[SECTION]` headers are ignored
+1. **Find or type the lyrics** — search below, or paste/type them yourself
+2. **Load a song** — any audio your browser can play
 3. **Play and tap** — `Enter` (or the TAP button) stamps the current line with
    the song position and advances
 4. **Adjust** — nudge any stamp, or click a timestamp to type an exact time
 5. **Preview** — karaoke-style check of the timing against the music
 6. **Export `.lrc`**
+
+## Looking lyrics up
+
+Search [LRCLIB](https://lrclib.net), a free open lyrics database. Search it
+like you would Google — *"artist + song title"*.
+
+If a song has **timed** lyrics, you get the timing as well as the words, so you
+play it through, nudge what's off, and export. Timed results are listed first
+and marked **TIMED**; entries with words only are marked **WORDS ONLY** and
+still save you retyping the lyric.
+
+Results are never applied automatically — you pick the right one. LRCLIB
+matches on text similarity, so *"the rhythm band"* also returns an unrelated
+band with a similar name.
+
+> Coverage varies. It is strong for well-known Nepali artists, weaker for
+> obscure and older songs, and nothing for lyrics that exist only in a
+> rehearsal-room document. For Nepali songs it has no timings for, your
+> Whisper-timed tool is still the better starting point — export from there and
+> load the `.lrc` here.
+
+## Nudging a whole song
+
+If every line is early or late — a count-in, a bar of silence before the
+first vocal — shift them all at once instead of nudging forty lines:
+
+- **Apply to all** with a value in seconds
+- **Align first line to playhead** moves the first stamped line exactly where
+  the playhead is, and carries everything else by the same amount
+
+`Ctrl+Z` undoes it, so a mistimed shift costs nothing.
 
 ## Getting accurate timings
 
@@ -80,9 +111,20 @@ your next visit.
 | `Backspace` | Clear selected stamp |
 | `P` | Toggle preview (karaoke) mode |
 | `E` | Export `.lrc` |
+| `J` | Jump the playhead to the selected line |
+| `M` | Mute |
+| `Ctrl+Z` / `Ctrl+Shift+Z` | Undo / redo |
+| `/` | Focus the lyric search box |
 | `Esc` | Exit preview mode |
 
-Click any row to select it.
+Click any row to select it. `Backspace` clears the selected stamp **and** moves
+the playhead back to where that line was, so a mistap is recovered with
+`Backspace` → `Space` → tap again.
+
+Playback speed (`0.5×` / `0.75×` / `1×` / `1.25×`) is a listening aid for fast
+or dense lines. It does **not** change the timings you stamp: the playhead
+still reports true song position, so tapping while slowed records the correct
+timestamp.
 
 ## Output format
 
@@ -93,6 +135,17 @@ Standard `.lrc`, with the song title carried across as `[ti:]`:
 [00:38.57]फर्केर आउने छैन,
 [00:40.86]म कुनै ऋतु होइन..
 ```
+
+A line sung several times is **one entry with several timestamps**, which is the
+LRC convention and what both AbleSet and the video renderer expect:
+
+```lrc
+[00:22.50][00:42.50][01:02.50]chorus line
+```
+
+In the editor a repeat is still its own row, so you can stamp each occurrence
+separately; they merge on export and split apart again if you `Load .lrc` the
+result.
 
 Any `.lrc`-compatible player reads it — including
 [alsmuse](https://github.com/provos/alsmuse) and AbleSet's own lyrics view.
