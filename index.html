@@ -65,6 +65,9 @@
     border: 1px solid var(--line-2);
     color: var(--cyan); font-size: 14px;
   }
+  .by { color: var(--faint); font-weight: 400; font-size: 13px; }
+  .by a { color: var(--dim); }
+  .by a:hover { color: var(--cyan); }
   .now-title { color: var(--dim); font-size: 14px; }
   .now-title b { color: var(--text); font-weight: 600; }
   .spacer { margin-left: auto; }
@@ -267,6 +270,21 @@
   body.previewing #modeBanner { display: block; }
 
   a { color: var(--cyan); }
+
+  /* ── footer ─────────────────────────────────────────────── */
+  footer {
+    margin-top: 34px;
+    padding: 22px 0 10px;
+    border-top: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 14px; flex-wrap: wrap;
+  }
+  .foot-name { font-size: 14px; color: var(--dim); }
+  .foot-name b { color: var(--text); font-weight: 650; }
+  .foot-note { font-size: 12.5px; color: var(--faint); margin: 3px 0 0; }
+  .foot-links { display: flex; gap: 16px; font-size: 13px; }
+  .foot-links a { color: var(--dim); }
+  .foot-links a:hover { color: var(--cyan); }
 </style>
 </head>
 <body>
@@ -274,7 +292,11 @@
 <div id="modeBanner">PREVIEW — current line highlighted and auto-scrolled · press P or Esc to exit</div>
 
 <header>
-  <div class="brand"><span class="dot">♪</span> Song Timer</div>
+  <div class="brand">
+    <span class="dot">♪</span>
+    Song Timer
+    <span class="by">by <a href="https://github.com/mhzsajan" target="_blank" rel="noopener">Sajan</a></span>
+  </div>
   <div class="now-title" id="nowTitle"></div>
   <div class="spacer"></div>
   <div class="progress">
@@ -364,6 +386,17 @@
       </div>
     </div>
   </div>
+
+  <footer>
+    <div>
+      <p class="foot-name">Song Timer by <b>Sajan Maharjan</b></p>
+      <p class="foot-note">Time a song once — the same .lrc drives AbleSet in Ableton Live and the lyric overlay for video.</p>
+    </div>
+    <nav class="foot-links">
+      <a href="https://github.com/mhzsajan/songtimer" target="_blank" rel="noopener">Source</a>
+      <a href="https://mhzsajan.github.io/" target="_blank" rel="noopener">Portfolio</a>
+    </nav>
+  </footer>
 </div>
 
 <script>
