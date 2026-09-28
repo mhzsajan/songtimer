@@ -342,6 +342,33 @@
   }
   body.previewing #modeBanner { display: block; }
 
+  /* ── restore / new-session dialog ────────────────────────── */
+  .modal {
+    position: fixed; inset: 0; z-index: 200;
+    display: grid; place-items: center;
+    padding: 24px;
+    background: rgba(5, 7, 10, .72);
+    backdrop-filter: blur(3px);
+  }
+  .modal[hidden] { display: none; }
+  .modal-card {
+    width: min(480px, 100%);
+    background: var(--surface);
+    border: 1px solid var(--line-2);
+    border-radius: 14px;
+    padding: 26px 26px 22px;
+    box-shadow: 0 30px 70px -24px rgba(0, 0, 0, .95);
+  }
+  .modal-card h2 { margin: 0 0 8px; font-size: 19px; }
+  .modal-sub { margin: 0 0 20px; color: var(--text-2); font-size: 14.5px; line-height: 1.6; }
+  .modal-actions { display: grid; gap: 8px; }
+  .modal-actions button { width: 100%; text-align: left; padding: 11px 14px; }
+  .modal-note {
+    margin: 18px 0 0; padding-top: 14px;
+    border-top: 1px solid var(--line-soft);
+    color: var(--faint); font-size: 12.5px; line-height: 1.55;
+  }
+
   a { color: var(--cyan); }
 
   /* ── footer ─────────────────────────────────────────────── */
@@ -387,6 +414,28 @@
 
 <div id="modeBanner">PREVIEW — current line highlighted and auto-scrolled · press P or Esc to exit</div>
 
+<!-- Offered on load when a previous session is saved, and from the "New"
+     button. The saved data is left untouched until a choice is made, so
+     "continue" is non-destructive. -->
+<div class="modal" id="restoreModal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="restoreTitle">
+    <h2 id="restoreTitle">You have a session in progress</h2>
+    <p class="modal-sub" id="restoreSummary"></p>
+    <div class="modal-actions">
+      <button id="resumeBtn" type="button" class="primary">
+        Continue where I left off
+      </button>
+      <button id="freshBtn" type="button">Start fresh, keep nothing</button>
+      <button id="freshAudioBtn" type="button">Start fresh, load a song</button>
+      <button id="freshLyricsBtn" type="button">Start fresh, load lyrics</button>
+    </div>
+    <p class="modal-note">
+      Timings and lyrics are saved in this browser. Audio is never stored —
+      browsers do not allow it — so you re-choose the song either way.
+    </p>
+  </div>
+</div>
+
 <header>
   <div class="brand">
     <span class="dot">♪</span>
@@ -409,6 +458,7 @@
   <div class="spacer"></div>
   <div class="progress">
     <div class="hist">
+      <button id="newBtn" type="button" title="Start a new session">New</button>
       <button id="undoBtn" type="button" title="Undo (Ctrl+Z)" disabled>↶</button>
       <button id="redoBtn" type="button" title="Redo (Ctrl+Shift+Z)" disabled>↷</button>
     </div>
@@ -652,7 +702,9 @@
 
   // ---------- persistence ----------
   // Losing forty tapped timings to an accidental refresh is the worst failure
-  // this tool can have, so the session is mirrored to localStorage.
+  // this tool can have, so the session is mirrored to localStorage. On load it
+  // is NOT applied silently -- the user is asked, because a half-timed set they
+  // forgot about is worse than an obvious prompt.
   let saveTimer = null;
   function save() {
     clearTimeout(saveTimer);
@@ -666,17 +718,45 @@
       } catch (e) { /* private mode / quota: not fatal */ }
     }, 250);
   }
-  function loadSaved() {
+
+  function readSaved() {
     try {
       const raw = localStorage.getItem(STORE);
-      if (!raw) return false;
+      if (!raw) return null;
       const d = JSON.parse(raw);
-      if (!d || !Array.isArray(d.lines) || !d.lines.length) return false;
-      lines.push(...d.lines);
-      $("lyrics").value = d.lyrics || d.lines.map((l) => l.text).join("\n");
-      $("songTitle").value = d.title || "";
-      return true;
-    } catch (e) { return false; }
+      if (!d || !Array.isArray(d.lines) || !d.lines.length) return null;
+      return d;
+    } catch (e) { return null; }
+  }
+
+  function forgetSaved() {
+    try { localStorage.removeItem(STORE); } catch (e) {}
+  }
+
+  function applySaved(d) {
+    lines.length = 0;
+    lines.push(...d.lines);
+    $("lyrics").value = d.lyrics || d.lines.map((l) => l.text).join("\n");
+    $("songTitle").value = d.title || "";
+    current = 0;
+    render();
+  }
+
+  function resetAll() {
+    lines.length = 0;
+    $("lyrics").value = "";
+    $("songTitle").value = "";
+    $("offsetInput").value = "0.00";
+    $("lyricSearch").value = "";
+    audio.pause();
+    audio.removeAttribute("src");
+    audio.load();
+    current = 0;
+    editing = -1;
+    undoStack.length = 0;
+    redoStack.length = 0;
+    forgetSaved();
+    render();
   }
 
   // ---------- render ----------
@@ -1365,8 +1445,78 @@
 
   window.addEventListener("beforeunload", save);
 
-  if (loadSaved()) setStatus("Restored your last session", true);
+  // ---------- restore / new session ----------
+  function openRestoreDialog() {
+    const d = readSaved();
+    if (d) {
+      const stamped = d.lines.filter((l) => l.time != null).length;
+      const what = d.title ? "“" + d.title + "”" : "an untitled song";
+      $("restoreTitle").textContent = stamped
+        ? "Continue " + what + "?"
+        : "You have unsaved lyrics for " + what;
+      $("restoreSummary").textContent = d.lines.length + " lines, " +
+        stamped + " already timed" +
+        (stamped === 0 ? " — nothing stamped yet." : ".");
+      $("resumeBtn").hidden = false;
+    } else {
+      $("restoreTitle").textContent = "Start a new session";
+      $("restoreSummary").textContent =
+        "Nothing is saved in this browser. This clears the lyrics, the timings and the loaded song.";
+      $("resumeBtn").hidden = true;
+    }
+    $("restoreModal").hidden = false;
+    ($("resumeBtn").hidden ? $("freshBtn") : $("resumeBtn")).focus();
+  }
+
+  function closeRestoreDialog() {
+    $("restoreModal").hidden = true;
+  }
+
+  $("resumeBtn").onclick = () => {
+    const d = readSaved();
+    if (d) {
+      pushUndo();
+      applySaved(d);
+      setStatus("Restored. Choose the song again — audio is never saved.", true);
+    }
+    closeRestoreDialog();
+  };
+
+  $("freshBtn").onclick = () => { resetAll(); closeRestoreDialog(); setStatus("Cleared.", true); };
+
+  // Start fresh, then open a picker. resetAll() runs first so the new file
+  // does not land on top of the old session.
+  $("freshAudioBtn").onclick = () => {
+    resetAll();
+    closeRestoreDialog();
+    $("file").click();
+  };
+  $("freshLyricsBtn").onclick = () => {
+    resetAll();
+    closeRestoreDialog();
+    pickFile(".txt,.lrc,text/plain", (text) => {
+      const isLrc = /\[\d+:\d+/.test(text);
+      $("lyrics").value = isLrc
+        ? text.replace(/\[\d+:\d+([.:]\d+)?\]/g, "").trim()
+        : text.trim();
+      reparse();
+      setStatus("Lyrics loaded — tap the timings.", true);
+    });
+  };
+
+  $("newBtn").onclick = openRestoreDialog;
+  $("restoreModal").addEventListener("click", (e) => {
+    if (e.target === $("restoreModal")) closeRestoreDialog();   // backdrop
+  });
+  // Escape closes the dialog, ahead of the preview shortcut.
+  $("restoreModal").addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeRestoreDialog(); }
+  });
+
+  // First run: ask instead of silently restoring. render() first so the
+  // dialog describes real numbers.
   render();
+  if (readSaved()) openRestoreDialog();
 })();
 </script>
 </body>
