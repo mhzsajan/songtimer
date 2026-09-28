@@ -73,22 +73,28 @@
     z-index: 5;
     box-shadow: 0 6px 24px rgba(0, 0, 0, .35);
   }
-  .list { width: 100%; max-width: 820px; }
+  .list {
+    width: 100%;
+    columns: 320px;
+    column-gap: 16px;
+    column-rule: 1px dashed #23232e;
+  }
   .line {
     display: flex; align-items: center; gap: 12px;
     padding: 8px 12px; border-radius: 8px;
     border-bottom: 1px solid #23232e;
     cursor: pointer;
+    break-inside: avoid;   /* never split a lyric row across columns */
   }
   .line.current { background: #26264f; outline: 1px solid #4f6ef7; }
   .line.sung { opacity: .55; }
   .line .stamp {
     color: #18b26b; font-variant-numeric: tabular-nums;
-    min-width: 150px; font-size: .9rem;
-    display: flex; gap: 4px; align-items: center;
+    min-width: 122px; font-size: .9rem;
+    display: flex; gap: 4px; align-items: center; flex-wrap: wrap;
   }
   .line .stamp .t { min-width: 74px; }
-  .line .txt { flex: 1; }
+  .line .txt { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .kbd {
     font-family: "Google Sans Code", Consolas, monospace; font-size: .72rem;
     background: #26262f; border: 1px solid #3a3a4a;
