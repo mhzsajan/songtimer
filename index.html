@@ -57,17 +57,47 @@
     backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--line);
   }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 16px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 16px; white-space: nowrap; }
   .brand .dot {
     width: 26px; height: 26px; border-radius: 7px;
     display: grid; place-items: center;
     background: linear-gradient(150deg, #1d2733, #131a22);
     border: 1px solid var(--line-2);
-    color: var(--cyan); font-size: 14px;
+    color: var(--cyan); font-size: 14px; flex: none;
   }
   .by { color: var(--faint); font-weight: 400; font-size: 13px; }
   .by a { color: var(--dim); }
   .by a:hover { color: var(--cyan); }
+
+  /* ── search in the header ─────────────────────────────────── */
+  .searchwrap {
+    position: relative;
+    display: flex; gap: 8px; align-items: center;
+    flex: 1 1 auto; min-width: 0;
+    max-width: 560px;
+  }
+  .searchwrap input { flex: 1 1 auto; min-width: 0; }
+  .searchwrap button { flex: none; }
+
+  .searchpop {
+    position: absolute; top: calc(100% + 8px); left: 0; right: 0;
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--line-2);
+    border-radius: 10px;
+    box-shadow: 0 18px 44px -16px rgba(0, 0, 0, .9);
+    padding: 8px;
+    max-height: min(62vh, 520px);
+    overflow-y: auto;
+    z-index: 30;
+  }
+  .searchpop.is-open { display: block; }
+  .searchpop .results { margin-top: 0; }
+  .searchpop .popnote {
+    padding: 8px 6px 6px;
+    color: var(--faint); font-size: 12.5px; line-height: 1.5;
+  }
+  .searchpop .popnote b { color: var(--dim); }
   .now-title { color: var(--dim); font-size: 14px; }
   .now-title b { color: var(--text); font-weight: 600; }
   .spacer { margin-left: auto; }
@@ -360,9 +390,21 @@
 <header>
   <div class="brand">
     <span class="dot">♪</span>
-    Song Timer
+    <span class="brand-full">Song Timer</span>
     <span class="by">by <a href="https://github.com/mhzsajan" target="_blank" rel="noopener">Sajan</a></span>
   </div>
+
+  <!-- Lyric search lives in the sticky header so it is reachable at any
+       scroll position. The results drop below it rather than pushing the
+       page around. -->
+  <div class="searchwrap">
+    <input type="text" id="lyricSearch" autocomplete="off"
+           placeholder="Search lyrics — artist + song title"
+           aria-label="Search lyrics by artist and song title">
+    <button id="searchBtn" type="button" class="primary">Search</button>
+    <div class="searchpop" id="searchResults"></div>
+  </div>
+
   <div class="now-title" id="nowTitle"></div>
   <div class="spacer"></div>
   <div class="progress">
@@ -401,22 +443,6 @@
   <div class="grid">
     <!-- lyrics: the actual work -->
     <div class="main">
-      <div class="card">
-        <div class="card-title"><span>Look up lyrics</span></div>
-        <p class="hint" style="margin-top:0; margin-bottom:10px;">
-          Search <b>LRCLIB</b>, a free open lyrics database — just like Google.
-          Songs marked <b>TIMED</b> come with the timing already on them, so you
-          only check the words.
-        </p>
-        <div class="row">
-          <input type="text" id="lyricSearch" placeholder="artist + song title"
-                 autocomplete="off">
-          <button id="searchBtn" type="button" class="primary">Search</button>
-        </div>
-        <div id="searchStatus" class="hint" style="margin-top:8px;"></div>
-        <div id="searchResults" class="results"></div>
-      </div>
-
       <div class="card">
         <div class="card-title">
           <span>Lyrics — one line per sung line</span>
@@ -1008,40 +1034,30 @@
   // first hit would be actively harmful: searching "the rhythm band" returns
   // "P.I.M.P by The Bacao Rhythm & Steel Band" -- a completely different act.
   const LRC_RE = /\[(?:(\d+):)?([0-5]?\d)(?:[.:](\d{1,3}))?\]/g;
+  const pop = () => $("searchResults");
 
-  function setSearch(msg, ok) {
-    const el = $("searchStatus");
-    el.textContent = msg || "";
-    el.className = "hint" + (ok ? " ok" : "");
-    el.style.color = ok ? "var(--teal)" : "";
+  function closeSearch() {
+    const p = pop();
+    p.classList.remove("is-open");
+    p.innerHTML = "";
   }
 
-  function parseSyncedLyrics(raw) {
-    const out = [];
-    for (const line of String(raw).split(/\r?\n/)) {
-      const t = line.trim();
-      if (!t) continue;
-      const stamps = [];
-      let rest = t, m;
-      LRC_RE.lastIndex = 0;
-      while ((m = LRC_RE.exec(rest))) {
-        if (m.index !== 0) break;
-        const f = m[3] ? parseInt(m[3], 10) / Math.pow(10, m[3].length) : 0;
-        stamps.push((m[1] ? parseInt(m[1], 10) * 60 : 0) + parseInt(m[2], 10) + f);
-        rest = rest.slice(m[0].length);
-      }
-      const text = rest.trim();
-      // Skip instrumental markers like [00:12.00] and empty lead-ins.
-      if (!stamps.length || !text) continue;
-      for (const time of stamps) out.push({ text, time });
+  function setSearch(msg, ok) {
+    const p = pop();
+    let note = p.querySelector(".popnote");
+    if (!note) {
+      note = document.createElement("div");
+      note.className = "popnote";
+      p.insertBefore(note, p.firstChild);
     }
-    out.sort((a, b) => a.time - b.time);
-    return out;
+    note.textContent = msg || "";
+    note.style.color = ok ? "var(--teal)" : "";
+    p.classList.add("is-open");
   }
 
   function runSearch() {
     const q = $("lyricSearch").value.trim();
-    const box = $("searchResults");
+    const box = pop();
     box.innerHTML = "";
     if (!q) { setSearch("Type an artist and a title."); return; }
 
@@ -1062,8 +1078,11 @@
         // Timed results first: they save the most work.
         const ordered = data.slice().sort((a, b) =>
           (b.syncedLyrics ? 1 : 0) - (a.syncedLyrics ? 1 : 0));
-        setSearch(ordered.length + " result" + (ordered.length > 1 ? "s" : "") +
-                  " — pick the right one", true);
+        setSearch(
+          ordered.length + " result" + (ordered.length > 1 ? "s" : "") +
+          " — pick the right one. Timed lyrics already have the timing on them.",
+          true
+        );
 
         for (const item of ordered) {
           const b = document.createElement("button");
@@ -1092,6 +1111,29 @@
         $("searchBtn").disabled = false;
         setSearch("Lookup failed (" + e.message + "). You can still type or paste lyrics.");
       });
+  }
+
+  function parseSyncedLyrics(raw) {
+    const out = [];
+    for (const line of String(raw).split(/\r?\n/)) {
+      const t = line.trim();
+      if (!t) continue;
+      const stamps = [];
+      let rest = t, m;
+      LRC_RE.lastIndex = 0;
+      while ((m = LRC_RE.exec(rest))) {
+        if (m.index !== 0) break;
+        const f = m[3] ? parseInt(m[3], 10) / Math.pow(10, m[3].length) : 0;
+        stamps.push((m[1] ? parseInt(m[1], 10) * 60 : 0) + parseInt(m[2], 10) + f);
+        rest = rest.slice(m[0].length);
+      }
+      const text = rest.trim();
+      // Skip instrumental markers like [00:12.00] and empty lead-ins.
+      if (!stamps.length || !text) continue;
+      for (const time of stamps) out.push({ text, time });
+    }
+    out.sort((a, b) => a.time - b.time);
+    return out;
   }
 
   function applyLyrics(item, hasSync) {
