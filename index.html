@@ -67,35 +67,27 @@
   #lyrics { width: 100%; min-height: 200px; resize: vertical; line-height: 1.5; }
   #player { width: 100%; margin-top: 10px; }
   .time { font-variant-numeric: tabular-nums; font-size: 1.05rem; color: #9aa5ff; }
-  #playerCard {
-    position: sticky;
-    top: 0;
-    z-index: 5;
-    box-shadow: 0 6px 24px rgba(0, 0, 0, .35);
-  }
-  /* Wide screens: park the player on the side so lyrics scroll fully visible */
+  #playerCard { box-shadow: 0 6px 24px rgba(0, 0, 0, .35); }
+  /* Wide screens: once the user scrolls past the player, it docks to the
+     right side so lyrics scroll fully visible. Above the fold it stays
+     in its natural spot in the page. */
   @media (min-width: 1200px) {
-    body { padding-right: 412px; }
-    #playerCard {
+    body.docked { padding-right: 400px; }
+    body.docked #playerCard {
       position: fixed;
       top: 18px;
       right: 18px;
       width: 378px;
       margin: 0;
+      z-index: 5;
     }
   }
-  .list {
-    width: 100%;
-    columns: 320px;
-    column-gap: 16px;
-    column-rule: 1px dashed #23232e;
-  }
+  .list { width: 100%; max-width: 820px; }
   .line {
     display: flex; align-items: center; gap: 12px;
     padding: 8px 12px; border-radius: 8px;
     border-bottom: 1px solid #23232e;
     cursor: pointer;
-    break-inside: avoid;   /* never split a lyric row across columns */
   }
   .line.current { background: #26264f; outline: 1px solid #4f6ef7; }
   .line.sung { opacity: .55; }
@@ -152,7 +144,7 @@
   </details>
 </div>
 
-<div class="card" id="playerCard">
+<div id="playerSlot"><div class="card" id="playerCard">
   <div class="row">
     <label><input type="file" id="file" accept="audio/*"></label>
     <button id="loadLyrics" type="button">Load .txt lyrics</button>
@@ -168,6 +160,7 @@
     <button id="previewBtn" type="button" disabled>👁 Preview (P)</button>
   </div>
   <div class="hint">Enter stamps &amp; advances. Space plays/pauses. Nudge with , / . — Shift for ±0.5s. Lyrics stay editable: fixing spellings keeps each line's timing.</div>
+</div>
 </div>
 
 <div class="card">
@@ -421,6 +414,16 @@
       case "Escape":     if (previewing) { e.preventDefault(); togglePreview(); } break;
     }
   });
+
+  // Dock the player to the side only after the user scrolls past it
+  // (wide screens only — CSS media query does the actual docking).
+  const playerSlot = document.getElementById("playerSlot");
+  function updateDock() {
+    const pastPlayer = playerSlot.getBoundingClientRect().bottom < 8;
+    document.body.classList.toggle("docked", pastPlayer);
+  }
+  window.addEventListener("scroll", updateDock, { passive: true });
+  window.addEventListener("resize", updateDock);
 
   render();
 })();
