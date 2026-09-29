@@ -441,6 +441,21 @@
     color: var(--dim); font-size: 0.7812rem; line-height: 1.6;
   }
   .export-note b { color: var(--text); font-weight: 600; }
+  /* Title and band, side by side above the lyric box. Labelled rather than
+     placeholder-only, because a field you can only identify by its greyed
+     sample text is easy to get wrong, and both values are exported. */
+  .meta {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+    gap: 10px; margin-bottom: 12px;
+  }
+  .meta-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .meta-field > span {
+    font-size: 0.7188rem; font-weight: 600; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--faint);
+  }
+  .meta-field input { width: 100%; }
+  @media (max-width: 620px) { .meta { grid-template-columns: 1fr; } }
+
   /* Three targets, one row of buttons and one row of descriptions beneath.
      Both use the same track count so each caption lines up under its button;
      the button itself carries only the destination name, because that is all
@@ -654,9 +669,31 @@
           <span>Lyrics — one line per sung line</span>
           <span id="lineCount" class="mono"></span>
         </div>
+
+        <!-- Title and band sit with the lyrics, not in the rail, because they
+             are part of what gets EXPORTED: the .lrc carries them as metadata
+             and the renderer puts them on screen for the opening of a video.
+             Buried next to the file picker they read as a form field. -->
+        <div class="meta">
+          <label class="meta-field">
+            <span>Song title</span>
+            <input type="text" id="songTitle" placeholder="e.g. Ritu">
+          </label>
+          <label class="meta-field">
+            <span>Band / artist</span>
+            <input type="text" id="bandName"
+                   placeholder="e.g. Deepak Bajracharya &amp; The Rhythm Band">
+          </label>
+        </div>
+
         <textarea id="lyrics" class="lyric"
           placeholder="Type or load lyrics here, one sung line per line.&#10;[SECTION] headers are ignored."></textarea>
-        <p class="hint">Timings survive edits: if you fix a spelling, the line keeps its stamp. Click any timestamp to type an exact time.</p>
+        <p class="hint">
+          <b>Edit these any time</b> — correct a spelling, fix a word, add a line you
+          missed. Your timings are kept: a line that still exists holds on to its stamp,
+          so you can retype the text without timing the song again. Click any timestamp
+          to type an exact time.
+        </p>
       </div>
 
       <div class="list" id="lineList"></div>
@@ -697,9 +734,6 @@
         <div class="card-title"><span>Song</span><span id="dur" class="mono"></span></div>
         <div class="row">
           <label><input type="file" id="file" accept="audio/*"></label>
-        </div>
-        <div class="row" style="margin-top:10px;">
-          <input type="text" id="songTitle" placeholder="Song title (optional)">
         </div>
         <div class="row" style="margin-top:10px;">
           <button id="loadLyrics" type="button">Load .txt</button>
@@ -912,8 +946,12 @@
     try {
       localStorage.setItem(STORE, JSON.stringify({
         title: $("songTitle").value,
+        // Saved as-is, ends included. Dropping them here meant a reload threw
+        // away the whole second pass, which is the most expensive thing in the
+        // tool to redo by ear.
+        band: $("bandName").value,
         lyrics: $("lyrics").value,
-        lines: lines.map((l) => ({ text: l.text, time: l.time })),
+        lines: lines.map((l) => ({ text: l.text, time: l.time, end: l.end ?? null })),
       }));
     } catch (e) { /* private mode / quota: not fatal */ }
   }
@@ -924,6 +962,9 @@
       if (!raw) return null;
       const d = JSON.parse(raw);
       if (!d || !Array.isArray(d.lines) || !d.lines.length) return null;
+      // Older saves predate the end pass, so ends may be missing entirely.
+      // Normalise rather than reject: those sessions are still worth keeping.
+      d.lines = d.lines.map((l) => ({ text: l.text, time: l.time ?? null, end: l.end ?? null }));
       return d;
     } catch (e) { return null; }
   }
@@ -937,6 +978,7 @@
     lines.push(...d.lines);
     $("lyrics").value = d.lyrics || d.lines.map((l) => l.text).join("\n");
     $("songTitle").value = d.title || "";
+    $("bandName").value = d.band || "";
     current = 0;
     render();
   }
@@ -945,6 +987,7 @@
     lines.length = 0;
     $("lyrics").value = "";
     $("songTitle").value = "";
+    $("bandName").value = "";
     $("offsetInput").value = "0.00";
     $("lyricSearch").value = "";
     audio.pause();
@@ -1262,6 +1305,8 @@
   };
 
   $("songTitle").addEventListener("input", () => { save(); render(); });
+  // Saved but not rendered: the band is exported, never shown on screen here.
+  $("bandName").addEventListener("input", save);
 
   // ---------- transport ----------
   audio.addEventListener("loadedmetadata", () => {
@@ -1808,6 +1853,7 @@
   function obsPage(ctx) {
     const data = {
       title: ctx.title,
+      band: ctx.band,
       // Stamped rows only, and each carries both edges when they are known so
       // the page never has to infer one.
       lines: ctx.stamped.map((l) => ({
@@ -1822,7 +1868,7 @@
 <html lang="ne">
 <head>
 <meta charset="utf-8">
-<title>${escapeHtml(ctx.title || "Lyrics")}</title>
+<title>${escapeHtml(ctx.title || "Lyrics")}${ctx.band ? " — " + escapeHtml(ctx.band) : ""}</title>
 <style>
   /* Transparent so the Browser Source composites straight over the camera.
      OBS applies body{background-color:rgba(0,0,0,0)} by default; this makes it
@@ -1927,9 +1973,10 @@ ${CLOSE}
     if (!stamped.length) { setStatus("Stamp some lines first."); return; }
     const ctx = {
       title: $("songTitle").value.trim(),
+      band: $("bandName").value.trim(),
       stamped,
       ended: stamped.filter((l) => l.end != null),
-      lrc: buildLrc(stamped, $("songTitle").value.trim()),
+      lrc: buildLrc(stamped, $("songTitle").value.trim(), $("bandName").value.trim()),
     };
 
     const files = spec.build(ctx);
@@ -1960,7 +2007,7 @@ ${CLOSE}
   // and the Remotion renderer already parses multi-stamp lines. Merging here
   // is what makes the file round-trip: Load .lrc will bring it back as the
   // four separate rows you started with.
-  function buildLrc(stamped, title) {
+  function buildLrc(stamped, title, band) {
     const groups = [];
     const byText = new Map();
     for (const l of stamped) {
@@ -1978,6 +2025,10 @@ ${CLOSE}
 
     let lrc = "";
     if (title) lrc += "[ti:" + title + "]\n";
+    // Standard LRC artist tag. Both consumers already ignore metadata they do
+    // not use, and this is how the renderer can pick the band up for the
+    // opening of a video without a second file.
+    if (band) lrc += "[ar:" + band + "]\n";
     for (const g of groups) {
       lrc += g.times.map((t) => lrcStamp(t)).join("") + g.text + "\n";
     }
