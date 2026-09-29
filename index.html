@@ -441,22 +441,30 @@
     color: var(--dim); font-size: 0.7812rem; line-height: 1.6;
   }
   .export-note b { color: var(--text); font-weight: 600; }
-  /* Two exports, because they are genuinely different jobs: one is a single
-     file for Ableton, the other is a pair for the video renderer. Labelling
-     them by destination rather than by filename is what makes the choice
-     obvious -- ".lrc" on its own does not say who it is for. */
-  .exports { display: grid; grid-template-columns: 1fr; gap: 8px; }
+  /* Three targets, one row of buttons and one row of descriptions beneath.
+     Both use the same track count so each caption lines up under its button;
+     the button itself carries only the destination name, because that is all
+     the eye needs to make the choice. */
+  .exports { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
   .exports button {
-    display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
-    padding: 11px 12px; text-align: left; line-height: 1.3;
+    padding: 11px 6px; font-size: 0.8125rem; font-weight: 600;
+    line-height: 1.2; text-align: center;
   }
-  .exports button b { font-size: 0.875rem; font-weight: 650; }
-  .exports button span {
-    font: 400 0.7188rem/1.3 var(--mono); color: var(--faint);
-    letter-spacing: 0; text-transform: none;
+  .export-notes {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px;
+    margin-top: 7px;
   }
-  .exports button:hover:not(:disabled) span { color: var(--dim); }
-  @media (min-width: 1180px) { .exports { grid-template-columns: 1fr 1fr 1fr; } }
+  .export-notes .export-note {
+    margin: 0; text-align: center; line-height: 1.35;
+    font: 400 0.6875rem/1.35 var(--mono); color: var(--faint);
+    letter-spacing: 0; text-transform: none; padding: 0;
+    background: none; border: none; border-radius: 0;
+  }
+  /* Stacks instead of squeezing three captions into a narrow rail. */
+  @media (max-width: 460px) {
+    .exports, .export-notes { grid-template-columns: 1fr; }
+    .export-notes { gap: 3px; }
+  }
   .export-note code {
     background: var(--surface-2); padding: 1px 5px; border-radius: 4px;
     font: 500 0.75rem var(--mono); color: var(--cyan);
@@ -614,10 +622,10 @@
 </header>
 
 <div class="wrap">
-  <!-- Secondary reference, collapsed by default. It was a full-width card above
-       the work, which pushed the lyric box below the fold on a laptop for a
-       list most people read once. -->
-  <details class="keys card">
+  <!-- Open by default: the shortcuts are the fastest way to learn the tool and
+       a closed panel hides them. A visitor's own collapse is remembered, so
+       "expanded" is the starting preference rather than a forced state. -->
+  <details class="keys card" id="keysDetails" open>
       <summary>Keyboard reference</summary>
       <div class="keys-grid">
         <span><kbd>Space</kbd>play / pause</span>
@@ -757,30 +765,19 @@
       <div class="card">
         <div class="card-title"><span>Export</span></div>
         <div class="row exports" id="exports"></div>
+        <div class="export-notes" id="exportNotes"></div>
         <p class="export-note">
-          One <code>.lrc</code> feeds both ends of the pipeline:<br>
-          <b>AbleSet</b> — drop it on <code>ableset.com/tools/lyrics-lrc</code> to get a Live
-          set with one MIDI clip per line.<br>
-          <b>Video</b> — feed the same file to the Remotion renderer for a transparent
-          lyric overlay.
-          <br><br>Repeated lines are merged into a single entry with several
-          timestamps — <code>[00:10.00][01:20.00]chorus</code> — which is how
-          both tools expect a repeat, and reloading it here restores each
-          occurrence as its own row.
+          Each target gets what it actually needs. <b>AbleSet</b> takes the
+          <code>.lrc</code> alone — it turns every timestamp into a MIDI clip, so
+          a second one would show the lyric twice. <b>Remotion AI</b> adds
+          <code>.ends.txt</code> so lines clear when they are sung instead of
+          being guessed from the next one. <b>OBS</b> gets a standalone
+          <code>.html</code>: add a Browser Source, point <em>Local file</em> at
+          it, and size it to your canvas.
           <br><br>
-          <b>Ends</b> — after stamping every start, press <kbd>T</kbd> (or use
-          the Start/End switch) and do a second pass recording when each line
-          finishes.
-          <br><br>
-          Each button writes what that application actually needs:
-          <b>AbleSet</b> takes the <code>.lrc</code> alone, because it turns
-          every timestamp into a MIDI clip and a second timestamp would show
-          the lyric twice. <b>The video</b> adds <code>.ends.txt</code>
-          (<code>start | end | text</code>) so the renderer stops guessing from
-          the next line. <b>OBS</b> gets a standalone <code>.html</code> — OBS has
-          no native lyric source, so you add a Browser Source, point
-          <em>Local file</em> at it, and size it to your canvas; its background
-          is transparent by default so it sits straight over the camera.
+          Repeat lines are exported as one entry with several timestamps —
+          <code>[00:10.00][01:20.00]chorus</code> — which is what both tools
+          expect, and reloading it here restores each as its own row.
         </p>
       </div>
     </div>
@@ -1700,21 +1697,39 @@
   }
   $("muteBtn").onclick = toggleMute;
 
+  // ---------- keyboard reference panel ----------
+  // Expanded is the preference, so the markup ships `open` and this only has to
+  // apply an explicit "I closed it" from a previous visit. Without the
+  // remembered state, anyone who collapsed it once would find it open again on
+  // every reload, which reads as the toggle not working.
+  const KEYS_PREF = "songtimer.keysOpen";
+  function restoreKeysPref() {
+    const d = $("keysDetails");
+    if (!d) return;
+    let saved = null;
+    try { saved = localStorage.getItem(KEYS_PREF); } catch (e) { /* private mode */ }
+    d.open = saved === null ? true : saved === "1";
+  }
+  $("keysDetails").addEventListener("toggle", (e) => {
+    try { localStorage.setItem(KEYS_PREF, e.target.open ? "1" : "0"); } catch (err) { /* ignore */ }
+  });
+
   // ---------- export ----------
   //
   // One button per destination, because what each application needs is
   // genuinely different -- not just a different file extension.
   //
-  //   AbleSet  .lrc only.  Every [stamp] becomes a MIDI clip there, so an end
-  //                        must never appear as a second stamp or the lyric
-  //                        would show twice in Ableton.
-  //   Video    .lrc + .ends.txt.  The renderer reads starts from the .lrc and
-  //                        needs the ends to stop guessing from the next line.
-  //   OBS      .html page.   OBS has no native lyric source, so the usable
-  //                        route is a Browser Source pointed at a local file.
-  //                        Their docs confirm a local file loads and the
-  //                        background is transparent by default, so one
-  //                        self-contained page needs no server and no config.
+  //   AbleSet      .lrc only.  Every [stamp] becomes a MIDI clip there, so an
+  //                           end must never appear as a second stamp or the
+  //                           lyric would show twice in Ableton.
+  //   Remotion AI  .lrc + .ends.txt.  The renderer reads starts from the .lrc
+  //                           and needs the ends to stop guessing from the
+  //                           next line.
+  //   OBS          .html page.  OBS has no native lyric source, so the usable
+  //                           route is a Browser Source pointed at a local
+  //                           file. Their docs confirm a local file loads and
+  //                           the background is transparent by default, so
+  //                           one self-contained page needs no server.
   //
   // Each target declares the files it writes and a one-line note. Adding a
   // destination later is a new entry here plus a build function -- the buttons
@@ -1723,13 +1738,13 @@
     {
       id: "ableset",
       label: "For AbleSet",
-      note: ".lrc — one MIDI clip per line",
+      note: "Ableton Live · .lrc",
       build: (ctx) => [file(ctx, "lrc", ctx.lrc)],
     },
     {
-      id: "video",
-      label: "For the video",
-      note: ".lrc + .ends.txt",
+      id: "remotion",
+      label: "For Remotion AI",
+      note: "Video overlay · .lrc + .ends.txt",
       build: (ctx) => {
         const out = [file(ctx, "lrc", ctx.lrc)];
         // No ends is not an error here -- the renderer falls back to the old
@@ -1742,7 +1757,7 @@
     {
       id: "obs",
       label: "For OBS",
-      note: ".html — drop into a Browser Source",
+      note: "Browser Source · .html",
       build: (ctx) => [file(ctx, "html", obsPage(ctx))],
     },
   ];
@@ -1882,18 +1897,28 @@ ${CLOSE}
 
   function paintExports() {
     const box = $("exports");
+    const notes = $("exportNotes");
     box.innerHTML = "";
+    notes.innerHTML = "";
     const hasAny = lines.some((l) => l.time != null);
+
     for (const spec of EXPORTS) {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "primary";
       b.disabled = !hasAny;
       b.dataset.target = spec.id;
-      b.innerHTML = "<b>" + escapeHtml(spec.label) + "</b><span>" +
-        escapeHtml(spec.note) + "</span>";
+      b.textContent = spec.label;
       b.onclick = () => runExport(spec);
       box.appendChild(b);
+
+      // The description sits below its own button rather than inside it, in a
+      // grid that mirrors the button row, so the pairing stays obvious and the
+      // buttons can be short enough to read at a glance.
+      const n = document.createElement("span");
+      n.className = "export-note";
+      n.textContent = spec.note;
+      notes.appendChild(n);
     }
   }
 
@@ -2033,7 +2058,7 @@ ${CLOSE}
       case "KeyM":      e.preventDefault(); toggleMute(); break;
       case "Slash":     e.preventDefault(); $("lyricSearch").focus(); break;
       case "KeyP":      e.preventDefault(); togglePreview(); break;
-      // E is the video export: it is the one the lyrics pipeline needs, and
+      // E is the Remotion export: it is the one the lyrics pipeline needs, and
       // its .lrc is the same file AbleSet wants, so a single shortcut cannot
       // leave you without the file you actually need.
       case "KeyE":      e.preventDefault(); runExport(EXPORTS[1]); break;
@@ -2214,6 +2239,7 @@ ${CLOSE}
   render();
   paintMode();
   paintExports();
+  restoreKeysPref();
   if (readSaved() || navType === "reload") openRestoreDialog(navType === "reload");
 })();
 </script>
