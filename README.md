@@ -22,22 +22,25 @@ reads the same numbers:
 
 ```
         song.mp3  +  lyrics
-               │
+               |
           Song Timer            ← you time it here, once
-               │
-     Song.lrc   +   Song.ends.txt
-        │                  │
-        ▼                  ▼
-   ┌─────────┐      ┌──────────────┐      ┌──────────┐
-   │ AbleSet │      │ Remotion AI  │      │   OBS    │
+               |
+   Song.remotion_start.lrc  +  Song.remotion_end.lrc
+         │                            │
+         ▼                            ▼
+   ┌──────────┐      ┌──────────────┐      ┌──────────┐
+   │  AbleSet │      │  Remotion AI │      │    OBS   │
    │ (Ableton)│      │ (the video)  │      │ (overlay)│
-   └─────────┘      └──────────────┘      └──────────┘
-     one MIDI           a lyric              a Browser
-     clip per line      video .mp4           Source page
+   └──────────┘      └──────────────┘      └──────────┘
+   Song_ableset.lrc   a lyric video .mp4    Song.obs.html
+                        + the end times
 ```
 
-Both output files are produced in the same export, from the same session, so
-they cannot disagree with each other or with the music.
+Every file is named for the target it is for, so all of them can sit in one
+folder without being confused for each other. The AbleSet and Remotion `.lrc`
+files carry the same starts but are used by different programs, and the ends
+live in a second file so AbleSet never sees a timestamp it would turn into a
+duplicate clip.
 
 ## How to use it
 
@@ -63,17 +66,25 @@ genuinely different.
 
 | Button | Writes | For |
 |---|---|---|
-| **For AbleSet** | `Song.lrc` | Ableton Live. One MIDI clip per line. |
-| **For Remotion AI** | `Song.lrc` + `Song.ends.txt` | The lyric video. |
-| **For OBS** | `Song.html` | A transparent overlay for streaming. |
+| **For AbleSet** | `Song_ableset.lrc` | Ableton Live. One MIDI clip per line. |
+| **For Remotion AI** | `Song.remotion_start.lrc` + `Song.remotion_end.lrc` | The lyric video. |
+| **For OBS** | `Song.obs.html` | A transparent overlay for streaming. |
 
 `E` is a shortcut for **For Remotion AI**.
+
+**Why every file is named for its target.** The three exports used to collide:
+AbleSet and Remotion both wrote a file called `Song.lrc`, with the same starts
+but read by different programs. In a folder listing there was no way to tell
+them apart, and the wrong one dragged into Ableton fails in a way that looks
+like a timing problem rather than a wrong file. Each name now says what it is
+for. The renderer finds the end file by that name beside the start file, so
+both halves still travel together.
 
 **Why the ends are in a second file.** AbleSet turns every `[timestamp]` into a
 MIDI clip, so a second timestamp would show the same lyric twice in Ableton —
 and it would be indistinguishable from the LRC convention where several
-timestamps mean the same line repeated. So the plain `.lrc` stays exactly as it
-is, and the ends travel beside it in `Song.ends.txt`.
+timestamps mean the same line repeated. So the start file stays exactly as it
+is, and the ends travel beside it in `Song.remotion_end.lrc`.
 
 **For OBS** writes a single self-contained page. Add a **Browser Source** in OBS,
 point *Local file* at it, and size it to your canvas — its background is
@@ -191,8 +202,9 @@ The ends file is one line per timed lyric, `start | end | text`:
 ## Related
 
 - **[lyric-video-remotion](https://github.com/mhzsajan/lyric-video-remotion)** —
-  turns the exported files into the lyric video. Reads `Song.lrc` *and*
-  `Song.ends.txt`, so the on-screen timing is the one you tapped.
+  turns the exported files into the lyric video. Reads
+  `Song.remotion_start.lrc` *and* `Song.remotion_end.lrc`, so the on-screen
+  timing is the one you tapped.
 - **[AbleSet](https://ableset.app)** — setlist and lyrics view for Ableton
   Live. Drop the `.lrc` on
   [ableset.com/tools/lyrics-lrc](https://ableset.com/tools/lyrics-lrc).

@@ -859,13 +859,14 @@
         <div class="row exports" id="exports"></div>
         <div class="export-notes" id="exportNotes"></div>
         <p class="export-note">
-          Each target gets what it actually needs. <b>AbleSet</b> takes the
-          <code>.lrc</code> alone — it turns every timestamp into a MIDI clip, so
-          a second one would show the lyric twice. <b>Remotion AI</b> adds
-          <code>.ends.txt</code> so lines clear when they are sung instead of
-          being guessed from the next one. <b>OBS</b> gets a standalone
-          <code>.html</code>: add a Browser Source, point <em>Local file</em> at
-          it, and size it to your canvas.
+          Each target gets what it actually needs, and each file is named for
+          the target so the three of them can sit in one folder without
+          getting mixed up. <b>AbleSet</b> takes the <code>.lrc</code> alone —
+          it turns every timestamp into a MIDI clip, so a second one would show
+          the lyric twice. <b>Remotion AI</b> adds the end times beside it so
+          lines clear when they are sung instead of being guessed from the next
+          one. <b>OBS</b> gets a standalone page: add a Browser Source, point
+          <em>Local file</em> at it, and size it to your canvas.
           <br><br>
           Repeat lines are exported as one entry with several timestamps —
           <code>[00:10.00][01:20.00]chorus</code> — which is what both tools
@@ -1850,16 +1851,21 @@
   // One button per destination, because what each application needs is
   // genuinely different -- not just a different file extension.
   //
-  //   AbleSet      .lrc only.  Every [stamp] becomes a MIDI clip there, so an
-  //                           end must never appear as a second stamp or the
-  //                           lyric would show twice in Ableton.
-  //   Remotion AI  .lrc + .ends.txt.  The renderer reads starts from the .lrc
-  //                           and needs the ends to stop guessing from the
-  //                           next line.
-  //   OBS          .html page.  OBS has no native lyric source, so the usable
-  //                           route is a Browser Source pointed at a local
-  //                           file. Their docs confirm a local file loads and
-  //                           the background is transparent by default, so
+  //   AbleSet      Song_ableset.lrc.  Every [stamp] becomes a MIDI clip there,
+  //                           so an end must never appear as a second stamp
+  //                           or the lyric would show twice in Ableton.
+  //   Remotion AI  Song.remotion_start.lrc + Song.remotion_end.lrc.  The
+  //                           renderer reads starts from the first and needs
+  //                           the ends from the second to stop guessing from
+  //                           the next line.  They are split by name because
+  //                           they are two exports of the same pass, and
+  //                           "start" and "end" say which is which in a folder
+  //                           listing.  The renderer finds the second by that
+  //                           name beside the first.
+  //   OBS          Song.obs.html.  OBS has no native lyric source, so the
+  //                           usable route is a Browser Source pointed at a
+  //                           local file. Their docs confirm a local file loads
+  //                           and the background is transparent by default, so
   //                           one self-contained page needs no server.
   //
   // Each target declares the files it writes and a one-line note. Adding a
@@ -1869,35 +1875,95 @@
     {
       id: "ableset",
       label: "For AbleSet",
-      note: "Ableton Live · .lrc",
-      build: (ctx) => [file(ctx, "lrc", ctx.lrc)],
+      note: "Ableton Live · Song_ableset.lrc",
+      build: (ctx) => [file(ctx, "_ableset.lrc", ctx.lrc)],
     },
     {
       id: "remotion",
       label: "For Remotion AI",
-      note: "Remotion renderer · .lrc + .ends.txt",
+      note: "Remotion renderer · .remotion_start.lrc + .remotion_end.lrc",
       build: (ctx) => {
-        const out = [file(ctx, "lrc", ctx.lrc)];
+        const out = [file(ctx, ".remotion_start.lrc", ctx.lrc)];
         // No ends is not an error here -- the renderer falls back to the old
         // heuristic -- but the status line says so rather than letting a
         // half-timed song look finished.
-        if (ctx.ended.length) out.push(file(ctx, "ends.txt", endsText(ctx)));
+        if (ctx.ended.length) out.push(file(ctx, ".remotion_end.lrc", endsText(ctx)));
         return out;
       },
     },
     {
       id: "obs",
       label: "For OBS",
-      note: "Browser Source · .html",
-      build: (ctx) => [file(ctx, "html", obsPage(ctx))],
+      note: "Browser Source · .obs.html",
+      build: (ctx) => [file(ctx, ".obs.html", obsPage(ctx))],
     },
   ];
 
-  const safe = (s) => String(s || "lyrics").replace(/[\\/:*?"<>|]/g, "-");
+  // The song title box is the only source of the filename. It is the one field
+  // the user has definitely filled in, and a filename that does not match it
+  // is a filename that has to be corrected by hand before the files are any
+  // use -- and the hand-corrected half is usually the end file, which is the
+  // one that fails silently when it goes missing.
+  //
+  // This is more than "swap the slashes". Each rule below exists because the
+  // name it protects is a NAME THAT MUST PAIR with its other half, and a
+  // Windows failure is silent:
+  //
+  //   control chars   a pasted title carries newlines and tabs; Windows
+  //                   forbids them in a path
+  //   reserved words  CON, PRN, NUL, AUX, COM1-9, LPT1-9 are DEVICES.
+  //                   "NUL.remotion_end.lrc" cannot be created at all, and
+  //                   the browser reports nothing useful
+  //   trailing dots   Windows drops them silently. "Song. " and "Song." would
+  //                   then be two different names for one song
+  //   length          over 255 the OS truncates the END of a name, which cuts
+  //                   the suffix off one half and not the other -- the exact
+  //                   shape of "the ends file went missing"
+  //
+  // 120 is the cap, not 250, because the suffix is added after this and the
+  // two have to fit in one path component together with room to spare.
+  const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+  const MAX_STEM = 120;
 
-  function file(ctx, ext, body) {
-    return { name: safe(ctx.title) + "." + ext, body };
+  const safe = (s) => {
+    let out = String(s == null ? "" : s)
+      .replace(/[\u0000-\u001f\u007f]/g, " ")   // illegal in a Windows path
+      .replace(/[\\/:*?"<>|]/g, "-")           // illegal, and legal-looking too
+      .replace(/\s+/g, " ")                    // pasted titles are multi-line
+      .trim()
+      .replace(/[. ]+$/, "");                  // Windows drops these silently
+    if (RESERVED.test(out)) out = "_" + out;
+    if (out.length > MAX_STEM) {
+      out = out.slice(0, MAX_STEM).replace(/[. ]+$/, "");
+    }
+    return out || "lyrics";
+  };
+
+  function file(ctx, suffix, body) {
+    return { name: safe(ctx.title) + suffix, body };
   }
+
+  // Filenames carry their target, because these files land in one folder and
+  // used to be told apart only by extension:
+  //
+  //   Song.lrc        <- For AbleSet
+  //   Song.lrc        <- For Remotion AI      (the collision)
+  //   Song.ends.txt   <- For Remotion AI
+  //
+  // Two files called Song.lrc with different content is exactly the kind of
+  // ambiguity that gets the wrong one dragged into Ableton. Each target now
+  // says what it is:
+  //
+  //   Song_ableset.lrc
+  //   Song.remotion_start.lrc
+  //   Song.remotion_end.lrc
+  //   Song.obs.html
+  //
+  // The Remotion pair is start and end rather than one file because that is
+  // what it is: the renderer reads the starts from the .lrc and the ends
+  // from a companion file, and Song Timer writes them as two exports for the
+  // same reason. lyric-video-remotion looks for <base>.remotion_end.lrc
+  // beside the _start one.
 
   function download(f) {
     const blob = new Blob([f.body], { type: "text/plain;charset=utf-8" });
