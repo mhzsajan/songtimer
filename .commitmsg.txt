@@ -1,0 +1,30 @@
+Fix: the missing-end-times warning was dead code and never fired
+
+runExport() tested spec.id === "video", but every EXPORTS entry is ableset /
+remotion / obs. The branch could never run.
+
+The build function's own comment says "the status line says so rather than
+letting a half-timed song look finished" -- and it did not. Exporting the
+Remotion target with no second pass produced a .lrc with no .ends.txt and a
+success message, so the missing end times were invisible. The renderer then
+guessed every line end from the next line's start, which is the lingering-
+lyric problem the ends file exists to solve. Everything about the export
+looked right; the only symptom was silence at the moment it was needed.
+
+Renaming an id is a one-word edit that leaves no other trace, and a string
+compared against a string is the cheapest thing to get wrong and the most
+expensive to notice. check_export.mjs asserts the declared ids and the
+status-line branches against each other, so renaming an export id alone now
+fails. Verified: it passes on this file and reports three failures with
+exit 1 when the old id is put back.
+
+Also warns on a partial second pass, which the old check could not have
+caught: some lines clear exactly when they are sung and the rest linger, so
+the video looks finished and is not.
+
+The export note also still read "Video overlay", a leftover from the id that
+was renamed.
+
+Checked and NOT bugs, since both looked like one: the .ends.txt Devanagari
+is correct UTF-8 (U+091C U+093E U+090A), and the note's separator is a
+correct U+00B7. Both rendered as ? in a cp1252 console.

@@ -1875,7 +1875,7 @@
     {
       id: "remotion",
       label: "For Remotion AI",
-      note: "Video overlay · .lrc + .ends.txt",
+      note: "Remotion renderer · .lrc + .ends.txt",
       build: (ctx) => {
         const out = [file(ctx, "lrc", ctx.lrc)];
         // No ends is not an error here -- the renderer falls back to the old
@@ -2075,9 +2075,21 @@ ${CLOSE}
       (files.length > 1 ? "s" : "") + ")";
     if (merged > 0) msg += " — " + merged + " repeat" + (merged > 1 ? "s" : "") + " merged";
     if (missing) msg += " — " + missing + " still unstamped";
-    if (spec.id === "video" && !ctx.ended.length) {
+    if (spec.id === "remotion" && !ctx.ended.length) {
+      // The id here was "video", which no EXPORTS entry uses -- they are
+      // ableset / remotion / obs -- so this branch never ran and the warning
+      // the build function promises never appeared. Forgetting the second
+      // pass therefore wrote a .lrc with no .ends.txt and said nothing, and
+      // the renderer fell back to guessing every line end.
       msg += ". No end times recorded, so the renderer will fall back to " +
         "guessing from the next line. Switch to End mode (T) and do a second pass.";
+    } else if (spec.id === "remotion" && ctx.ended.length < stamped.length) {
+      // The worse case, and one the old check could not have caught: a second
+      // pass that was started and abandoned. Some lines clear exactly when
+      // they are sung and the rest linger, so the video looks finished and
+      // is not.
+      msg += ". Only " + ctx.ended.length + " of " + stamped.length +
+        " lines have an end time, so the rest will linger. Finish the second pass.";
     }
     if (spec.id === "obs") {
       msg += ". In OBS: add a Browser Source, point Local file at it, " +
