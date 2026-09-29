@@ -21,6 +21,13 @@
     --teal:      #2dd4bf;
     --warn:      #fbbf24;
   }
+  /* One fluid root size, so the whole interface scales with the panel instead
+     of being designed for a single monitor. Calibrated for the three setups in
+     use: 1080p -> 16.2px, 1440p -> 18.1px, 4K -> 21.9px, and never below
+     15px. Every type size below is in rem and follows from this one value.
+     The bounds stay in px on purpose: on the root element a rem would resolve
+     against the inherited 16px, making this self-referential. */
+  html { font-size: clamp(15px, 0.3vw + 10.4px, 24px); }
 
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
@@ -31,7 +38,7 @@
     color: var(--text);
     /* Sans for the interface. Monospace is reserved for timestamps, where
        digit alignment actually matters. */
-    font: 400 15px/1.6 "Inter", system-ui, -apple-system, "Segoe UI", Roboto,
+    font: 400 0.9375rem/1.6 "Inter", system-ui, -apple-system, "Segoe UI", Roboto,
           "Noto Sans", sans-serif;
     min-height: 100vh;
   }
@@ -51,36 +58,42 @@
   /* ── header ─────────────────────────────────────────────── */
   header {
     position: sticky; top: 0; z-index: 20;
-    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-    padding: 14px 24px;
+    display: grid;
+    /* Three tracks: 1fr, auto, 1fr. The two 1fr tracks split the leftover
+       space equally, so the search sits on the header's centre line whatever
+       the brand and counters are doing. As a flex row it was measured
+       OVERLAPPING them by ~500px -- the search took a 560px basis and the
+       counters landed on top of it rather than beside it. */
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center; gap: 16px;
+    padding: 11px 20px;
     background: rgba(13, 17, 23, .92);
     backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--line);
   }
-  /* Three-part header: brand on the left, search in the middle, counters on
-     the right. The side groups are fixed-width and the search takes what is
-     left, so the search is centred in the true remaining space and its
-     midpoint stops moving as the counters grow. The absolute layer is only a
-     fallback for the narrow case, where the flow would otherwise push the
-     search past the counters. */
-  /* Both side groups are shrinkable and the search is NOT: with a 785px window
-     the counters alone wanted 492px, so they overflowed the bar and sat on top
-     of the search. The search keeps its size, the sides give way, and the
-     header drops to a second row via flex-wrap before anything overlaps. */
+  .header-left  { grid-column: 1; justify-self: start; min-width: 0; }
+  .searchwrap   { grid-column: 2; justify-self: center; }
+  .header-right { grid-column: 3; justify-self: end; }
   .header-left, .header-right {
-    display: flex; align-items: center; gap: 14px;
-    flex: 0 1 auto; min-width: 0;
+    display: flex; align-items: center; gap: 12px; min-width: 0;
   }
-  .header-right { margin-left: auto; }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 17.5px; white-space: nowrap; }
+  /* Below this width there is no honest way to keep three things on one line,
+     so the search takes its own row rather than overlapping anything. */
+  @media (max-width: 1000px) {
+    header { grid-template-columns: 1fr auto; row-gap: 10px; }
+    .searchwrap { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; }
+    .header-left  { grid-column: 1; grid-row: 1; }
+    .header-right { grid-column: 2; grid-row: 1; }
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 1.0938rem; white-space: nowrap; }
   .brand .dot {
     width: 28px; height: 28px; border-radius: 7px;
     display: grid; place-items: center;
     background: linear-gradient(150deg, #1d2733, #131a22);
     border: 1px solid var(--line-2);
-    color: var(--cyan); font-size: 15px; flex: none;
+    color: var(--cyan); font-size: 0.9375rem; flex: none;
   }
-  .by { color: var(--faint); font-weight: 400; font-size: 13px; }
+  .by { color: var(--faint); font-weight: 400; font-size: 0.8125rem; }
   .by a { color: var(--dim); }
   .by a:hover { color: var(--cyan); }
 
@@ -118,10 +131,10 @@
   .searchpop .results { margin-top: 0; }
   .searchpop .popnote {
     padding: 8px 6px 6px;
-    color: var(--faint); font-size: 12.5px; line-height: 1.5;
+    color: var(--faint); font-size: 0.7812rem; line-height: 1.5;
   }
   .searchpop .popnote b { color: var(--dim); }
-  .now-title { color: var(--dim); font-size: 14px; }
+  .now-title { color: var(--dim); font-size: 0.875rem; }
   .now-title b { color: var(--text); font-weight: 600; }
   .spacer { margin-left: auto; }
 
@@ -131,7 +144,7 @@
      that means nothing on its own. */
   .progress {
     display: flex; align-items: center; gap: 12px;
-    color: var(--dim); font-size: 14px;
+    color: var(--dim); font-size: 0.875rem;
     /* Wraps internally before the group itself can push into the search. */
     flex-wrap: wrap; row-gap: 6px;
   }
@@ -143,16 +156,16 @@
     display: flex; align-items: baseline; gap: 5px; white-space: nowrap;
     flex: none;
   }
-  .counter-n { font: 600 15px/1 var(--mono); color: var(--text); }
-  .counter-l { font-size: 13px; color: var(--dim); letter-spacing: .02em; }
+  .counter-n { font: 600 0.9375rem/1 var(--mono); color: var(--text); }
+  .counter-l { font-size: 0.8125rem; color: var(--dim); letter-spacing: .02em; }
   .counter-ends .counter-n { color: var(--cyan); }
   .counter-ends[data-done="1"] .counter-l { color: var(--teal); }
   .hist { display: flex; gap: 6px; }
-  .hist button { padding: 7px 11px; font-size: 13.5px; line-height: 1; }
+  .hist button { padding: 7px 11px; font-size: 0.8438rem; line-height: 1; }
   /* The New button was just the word "New" with no icon and a small hit area,
      which read as a stray label rather than an action. */
   #newBtn { display: inline-flex; align-items: center; gap: 6px; }
-  .hist-ico { font-size: 14px; line-height: 1; opacity: .8; }
+  .hist-ico { font-size: 0.875rem; line-height: 1; opacity: .8; }
   .bar {
     width: 130px; height: 5px; border-radius: 3px;
     background: var(--surface-2); overflow: hidden;
@@ -166,10 +179,16 @@
   }
 
   /* ── layout ─────────────────────────────────────────────── */
-  .wrap { max-width: 1500px; margin: 0 auto; padding: 22px 24px 60px; }
-  .grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-items: start; }
+  /* The page grows with the panel instead of sitting as a 1500px island in
+     the middle of a 4K screen, but stops before the lyric lines get so long
+     that the eye loses the start of the next one. */
+  .wrap { max-width: clamp(1400px, 90vw, 2400px); margin: 0 auto; padding: 20px 24px 60px; }
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
   @media (min-width: 1100px) {
-    .grid { grid-template-columns: minmax(0, 1fr) 372px; }
+    /* 372px was too narrow for the rail's own contents: the TAP label wrapped
+       onto two lines and the Start/End switch was cramped. The rail also
+       scales, so the controls do not look lost beside a 4K-wide lyric list. */
+    .grid { grid-template-columns: minmax(0, 1fr) clamp(400px, 25vw, 520px); }
     .rail { grid-column: 2; grid-row: 1; position: sticky; top: 78px; }
     .main { grid-column: 1; grid-row: 1; }
   }
@@ -184,7 +203,7 @@
 
   .card-title {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    font-size: 12px; font-weight: 650; letter-spacing: .1em; text-transform: uppercase;
+    font-size: 0.75rem; font-weight: 650; letter-spacing: .1em; text-transform: uppercase;
     color: var(--faint); margin-bottom: 12px;
   }
 
@@ -198,7 +217,7 @@
     border: 1px solid var(--line-2);
     border-radius: 8px;
     padding: 8px 13px;
-    font: 500 14px/1 "Inter", system-ui, sans-serif;
+    font: 500 0.875rem/1 "Inter", system-ui, sans-serif;
     cursor: pointer;
     transition: background .14s ease, border-color .14s ease, opacity .14s ease;
   }
@@ -210,7 +229,7 @@
   }
   button.primary:hover:not(:disabled) { background: linear-gradient(180deg, #55eaff, #1bc4e0); }
   button.ghost { background: transparent; }
-  button.tiny { padding: 4px 7px; font-size: 12px; border-radius: 6px; }
+  button.tiny { padding: 4px 7px; font-size: 0.75rem; border-radius: 6px; }
 
   input[type="text"], textarea {
     background: var(--bg);
@@ -218,25 +237,25 @@
     border: 1px solid var(--line-2);
     border-radius: 8px;
     padding: 9px 11px;
-    font-size: 14px;
+    font-size: 0.875rem;
     min-width: 0;
   }
   input[type="text"] { flex: 1; }
   input[type="text"]:focus, textarea:focus, button:focus-visible {
     outline: none; border-color: var(--cyan);
   }
-  input[type="file"] { color: var(--dim); font-size: 13.5px; }
+  input[type="file"] { color: var(--dim); font-size: 0.8438rem; }
   #lyrics { width: 100%; min-height: 170px; resize: vertical; line-height: 1.6; }
 
-  .time { color: var(--cyan); font-size: 14px; }
-  .status { color: var(--warn); font-size: 13.5px; min-height: 1.2em; }
+  .time { color: var(--cyan); font-size: 0.875rem; }
+  .status { color: var(--warn); font-size: 0.8438rem; min-height: 1.2em; }
   .status.ok { color: var(--teal); }
   #player { width: 100%; margin-top: 12px; border-radius: 8px; }
 
   #tapBtn {
     width: 100%; margin-top: 12px;
     padding: 20px 16px;
-    font-size: 16px; font-weight: 700; letter-spacing: .02em;
+    font-size: 1rem; font-weight: 700; letter-spacing: .02em;
     background: linear-gradient(180deg, #1f2937, #172029);
     border-color: #35455a; color: var(--text);
   }
@@ -246,7 +265,7 @@
     border-color: #0f766e; color: #04211d;
   }
 
-  .hint { color: var(--faint); font-size: 12.5px; margin-top: 10px; line-height: 1.55; }
+  .hint { color: var(--faint); font-size: 0.7812rem; margin-top: 10px; line-height: 1.55; }
 
   /* ── speed + seek ────────────────────────────────────────── */
   .ctl {
@@ -254,7 +273,7 @@
     margin-top: 12px; flex-wrap: wrap;
   }
   .ctl-label {
-    font-size: 11px; font-weight: 650; letter-spacing: .1em;
+    font-size: 0.6875rem; font-weight: 650; letter-spacing: .1em;
     text-transform: uppercase; color: var(--faint);
     width: 46px; flex: none;
   }
@@ -265,7 +284,7 @@
   .seg button {
     background: transparent; border: 0; border-radius: 6px;
     padding: 5px 10px; color: var(--dim);
-    font: 500 12.5px/1 var(--mono); font-variant-numeric: tabular-nums;
+    font: 500 0.7812rem/1 var(--mono); font-variant-numeric: tabular-nums;
   }
   .seg button:hover { background: var(--surface-2); color: var(--text); }
   .seg button.is-on { background: var(--cyan-deep); color: #eafeff; }
@@ -274,7 +293,7 @@
   /* ── keyboard reference: collapsed, it is a reference ──── */
   details.keys summary {
     cursor: pointer; color: var(--dim);
-    font-size: 12.5px; font-weight: 600;
+    font-size: 0.7812rem; font-weight: 600;
     letter-spacing: .04em;
     list-style: none; user-select: none;
   }
@@ -285,13 +304,13 @@
     display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
     gap: 7px 18px; margin-top: 14px;
   }
-  .keys-grid span { color: var(--dim); font-size: 13px; }
+  .keys-grid span { color: var(--dim); font-size: 0.8125rem; }
   kbd {
     display: inline-block; min-width: 20px; text-align: center;
     padding: 2px 6px; margin-right: 7px;
     background: var(--surface-2); border: 1px solid var(--line-2);
     border-bottom-width: 2px; border-radius: 5px;
-    font: 500 11.5px/1.5 var(--mono); color: var(--text);
+    font: 500 0.7188rem/1.5 var(--mono); color: var(--text);
   }
 
   /* ── lyric list: the main work area, so it gets the room ── */
@@ -317,7 +336,7 @@
     background: var(--surface-2);
     border-color: var(--cyan);
   }
-  .line .txt { font-size: 16px; min-width: 0; overflow-wrap: anywhere; }
+  .line .txt { font-size: 1rem; min-width: 0; overflow-wrap: anywhere; }
   .line:not(.sung) .txt { color: var(--faint); }
 
   .stamp { display: flex; align-items: center; gap: 4px; }
@@ -338,7 +357,7 @@
   .stamp .t {
     background: transparent; border: 1px solid transparent; color: var(--faint);
     padding: 3px 6px; border-radius: 6px; cursor: pointer;
-    font: 500 13.5px/1.4 var(--mono); font-variant-numeric: tabular-nums;
+    font: 500 0.8438rem/1.4 var(--mono); font-variant-numeric: tabular-nums;
     min-width: 78px; text-align: left;
   }
   .line.sung .stamp .t { color: var(--teal); border-color: rgba(45, 212, 191, .3); }
@@ -351,31 +370,43 @@
   .line.ended .stamp .tend:hover { border-color: var(--cyan); }
 
   /* ---------- start / end mode ---------- */
-  .modes { display: flex; gap: 6px; margin-top: 10px; }
+  /* The mode is two passes over the same song, so it is numbered like steps
+     rather than presented as an abstract toggle -- that is the shape of the
+     work, and a "which of these is active?" question disappears. */
+  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 0; }
   .mode {
-    flex: 1; padding: 9px 8px; cursor: pointer;
-    /* Sentence case, not uppercase: "START OF WORD" set in letterspaced caps
-       is wider than the rail allows, and the extra width shrank the type. The
-       label has to be readable at a glance, so it is set plainly. */
-    font: 600 13.5px/1.3 var(--sans); letter-spacing: .01em;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 10px 8px; cursor: pointer;
+    font: 600 0.8438rem/1.25 var(--sans); letter-spacing: .01em;
     background: var(--surface-2); border: 1px solid var(--line); color: var(--faint);
+  }
+  .mode .n {
+    font: 700 0.625rem/1 var(--mono); letter-spacing: .08em; opacity: .7;
   }
   .mode:hover { border-color: var(--cyan); color: var(--text); }
   .mode.on {
-    background: rgba(34, 211, 238, .12); border-color: var(--cyan); color: var(--cyan);
+    background: rgba(34, 211, 238, .14); border-color: var(--cyan); color: var(--cyan);
   }
-  .modehint { margin: 6px 0 0; text-align: center; }
+  .mode.done { color: var(--teal); border-color: rgba(45, 212, 191, .45); }
+  .mode.done .n { color: var(--teal); opacity: 1; }
+  .modehint { margin: 7px 0 10px; text-align: center; }
   .modehint b { color: var(--text); }
+
+  /* The one control you press a hundred times per song, so it is the largest
+     thing in the rail and it never moves. */
+  .card-stamp #tapBtn { padding: 20px 16px; font-size: 0.9688rem; }
+  .card-stamp { border-color: var(--line-2); }
+  .card-stamp .card-title { margin-bottom: 12px; }
   .stamp .t input {
     width: 78px; background: var(--bg); color: var(--text);
     border: 1px solid var(--cyan); border-radius: 5px;
-    padding: 2px 5px; font: 500 13px/1.4 var(--mono);
+    padding: 2px 5px; font: 500 0.8125rem/1.4 var(--mono);
   }
   .nudge {
     background: var(--surface-2); border: 1px solid var(--line-2);
     color: var(--dim); border-radius: 6px;
     padding: 3px 7px; cursor: pointer;
-    font: 500 12px/1.4 var(--mono);
+    font: 500 0.75rem/1.4 var(--mono);
   }
   .nudge:hover { color: var(--text); border-color: var(--cyan); }
   .nudge.jump { color: var(--cyan); border-color: rgba(34, 211, 238, .35); }
@@ -400,14 +431,14 @@
     .rowctl { display: none !important; }
   }
 
-  .empty { color: var(--faint); font-size: 14px; padding: 22px 4px; text-align: center; }
+  .empty { color: var(--faint); font-size: 0.875rem; padding: 22px 4px; text-align: center; }
 
   /* ── export ─────────────────────────────────────────────── */
   .export-note {
     margin: 12px 0 0; padding: 11px 13px;
     background: var(--bg); border: 1px solid var(--line);
     border-left: 2px solid var(--cyan-deep); border-radius: 0 7px 7px 0;
-    color: var(--dim); font-size: 12.5px; line-height: 1.6;
+    color: var(--dim); font-size: 0.7812rem; line-height: 1.6;
   }
   .export-note b { color: var(--text); font-weight: 600; }
   /* Two exports, because they are genuinely different jobs: one is a single
@@ -419,22 +450,22 @@
     display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
     padding: 11px 12px; text-align: left; line-height: 1.3;
   }
-  .exports button b { font-size: 14px; font-weight: 650; }
+  .exports button b { font-size: 0.875rem; font-weight: 650; }
   .exports button span {
-    font: 400 11.5px/1.3 var(--mono); color: var(--faint);
+    font: 400 0.7188rem/1.3 var(--mono); color: var(--faint);
     letter-spacing: 0; text-transform: none;
   }
   .exports button:hover:not(:disabled) span { color: var(--dim); }
   @media (min-width: 1180px) { .exports { grid-template-columns: 1fr 1fr 1fr; } }
   .export-note code {
     background: var(--surface-2); padding: 1px 5px; border-radius: 4px;
-    font: 500 12px var(--mono); color: var(--cyan);
+    font: 500 0.75rem var(--mono); color: var(--cyan);
   }
 
   #modeBanner {
     display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 30;
     background: var(--cyan-deep); color: #eaffff;
-    padding: 7px; text-align: center; font-size: 13px; font-weight: 600;
+    padding: 7px; text-align: center; font-size: 0.8125rem; font-weight: 600;
   }
   body.previewing #modeBanner { display: block; }
 
@@ -455,14 +486,14 @@
     padding: 26px 26px 22px;
     box-shadow: 0 30px 70px -24px rgba(0, 0, 0, .95);
   }
-  .modal-card h2 { margin: 0 0 8px; font-size: 19px; }
-  .modal-sub { margin: 0 0 20px; color: var(--text-2); font-size: 14.5px; line-height: 1.6; }
+  .modal-card h2 { margin: 0 0 8px; font-size: 1.1875rem; }
+  .modal-sub { margin: 0 0 20px; color: var(--text-2); font-size: 0.9062rem; line-height: 1.6; }
   .modal-actions { display: grid; gap: 8px; }
   .modal-actions button { width: 100%; text-align: left; padding: 11px 14px; }
   .modal-note {
     margin: 18px 0 0; padding-top: 14px;
     border-top: 1px solid var(--line-soft);
-    color: var(--faint); font-size: 12.5px; line-height: 1.55;
+    color: var(--faint); font-size: 0.7812rem; line-height: 1.55;
   }
 
   a { color: var(--cyan); }
@@ -475,10 +506,10 @@
     display: flex; align-items: center; justify-content: space-between;
     gap: 14px; flex-wrap: wrap;
   }
-  .foot-name { font-size: 14px; color: var(--dim); }
+  .foot-name { font-size: 0.875rem; color: var(--dim); }
   .foot-name b { color: var(--text); font-weight: 650; }
-  .foot-note { font-size: 12.5px; color: var(--faint); margin: 3px 0 0; }
-  .foot-links { display: flex; gap: 16px; font-size: 13px; }
+  .foot-note { font-size: 0.7812rem; color: var(--faint); margin: 3px 0 0; }
+  .foot-links { display: flex; gap: 16px; font-size: 0.8125rem; }
   .foot-links a { color: var(--dim); }
   .foot-links a:hover { color: var(--cyan); }
 
@@ -494,13 +525,13 @@
     border-radius: 8px;
   }
   .result:hover { background: var(--surface-2); border-color: var(--cyan); }
-  .result .r-title { font-size: 13.5px; color: var(--text); }
-  .result .r-artist { grid-column: 1; font-size: 12.5px; color: var(--dim); }
-  .result .r-dur { grid-row: 1; font: 500 12px var(--mono); color: var(--faint); }
+  .result .r-title { font-size: 0.8438rem; color: var(--text); }
+  .result .r-artist { grid-column: 1; font-size: 0.7812rem; color: var(--dim); }
+  .result .r-dur { grid-row: 1; font: 500 0.75rem var(--mono); color: var(--faint); }
   .badge {
     grid-row: 2; justify-self: start;
     padding: 1px 6px; border-radius: 999px;
-    font: 600 10px/1.6 var(--sans); letter-spacing: .06em; text-transform: uppercase;
+    font: 600 0.625rem/1.6 var(--sans); letter-spacing: .06em; text-transform: uppercase;
   }
   .badge.synced { background: rgba(45, 212, 191, .14); color: var(--teal); }
   .badge.plain  { background: rgba(139, 152, 169, .14); color: var(--dim); }
@@ -583,8 +614,10 @@
 </header>
 
 <div class="wrap">
-  <div class="card">
-    <details class="keys">
+  <!-- Secondary reference, collapsed by default. It was a full-width card above
+       the work, which pushed the lyric box below the fold on a laptop for a
+       list most people read once. -->
+  <details class="keys card">
       <summary>Keyboard reference</summary>
       <div class="keys-grid">
         <span><kbd>Space</kbd>play / pause</span>
@@ -604,7 +637,6 @@
         <span><kbd>Esc</kbd>exit preview</span>
       </div>
     </details>
-  </div>
 
   <div class="grid">
     <!-- lyrics: the actual work -->
@@ -622,8 +654,37 @@
       <div class="list" id="lineList"></div>
     </div>
 
-    <!-- player -->
+    <!-- The rail is ordered by the WORK, not by what kind of control it is:
+         stamp, load, play, fix, export. The old order grouped the file picker
+         and the transport together and left the one thing you press a hundred
+         times per song buried in the middle of it. -->
     <div class="rail">
+      <!-- 1. the primary action, first, always in the same place -->
+      <div class="card card-stamp">
+        <div class="card-title"><span>Stamping</span></div>
+
+        <!-- Which edge Enter records. Stated plainly because the failure mode
+             of getting it wrong is a plausible-looking wrong number, not a
+             visible error. T = toggle. -->
+        <div class="modes" role="radiogroup" aria-label="What Enter records">
+          <button id="modeStart" type="button" class="mode on" role="radio" aria-checked="true">
+            <span class="n">PASS 1</span>Start of word
+          </button>
+          <button id="modeEnd" type="button" class="mode" role="radio" aria-checked="false">
+            <span class="n">PASS 2</span>End of word
+          </button>
+        </div>
+        <p class="hint modehint" id="modeHint">Enter records when each word or line <b>begins</b>.</p>
+
+        <button id="tapBtn" type="button" disabled>TAP — stamp the START of the current line</button>
+
+        <div class="row" style="margin-top:10px;">
+          <button id="previewBtn" type="button" disabled>Preview</button>
+          <button id="clearBtn" type="button" class="ghost">Clear timings</button>
+        </div>
+      </div>
+
+      <!-- 2. what you are timing -->
       <div class="card">
         <div class="card-title"><span>Song</span><span id="dur" class="mono"></span></div>
         <div class="row">
@@ -643,22 +704,6 @@
           <span class="time mono" id="time">0:00.0 / 0:00.0</span>
         </div>
         <div class="status" id="status"></div>
-
-        <!-- Which edge Enter records. Stated plainly because the failure mode
-             of getting it wrong is a plausible-looking wrong number, not a
-             visible error. T = toggle. -->
-        <div class="modes" role="radiogroup" aria-label="What Enter records">
-          <button id="modeStart" type="button" class="mode on" role="radio" aria-checked="true">Start of word</button>
-          <button id="modeEnd" type="button" class="mode" role="radio" aria-checked="false">End of word</button>
-        </div>
-        <p class="hint modehint" id="modeHint">Enter records when each word or line <b>begins</b>.</p>
-
-        <button id="tapBtn" type="button" disabled>TAP — stamp the START of the current line</button>
-
-        <div class="row" style="margin-top:10px;">
-          <button id="previewBtn" type="button" disabled>Preview</button>
-          <button id="clearBtn" type="button" class="ghost">Clear timings</button>
-        </div>
 
         <!-- playback rate: a listening aid only. currentTime still reports true
              song position, so tapping while slowed stamps the correct time. -->
@@ -1055,6 +1100,11 @@
     }
 
     $("lineCount").textContent = lines.length ? lines.length + " lines" : "";
+    // The pass indicators depend on how many stamps exist, so they are painted
+    // here as well as on a mode switch. Without this they went stale the
+    // moment you tapped -- the whole point of showing them is watching the
+    // second pass fill in.
+    paintMode();
     $("nowTitle").innerHTML = $("songTitle").value
       ? "· <b>" + escapeHtml($("songTitle").value) + "</b>"
       : "";
@@ -1932,8 +1982,17 @@ ${CLOSE}
     $("modeEnd").classList.toggle("on", on);
     $("modeStart").setAttribute("aria-checked", String(!on));
     $("modeEnd").setAttribute("aria-checked", String(on));
+
+    // Show which passes are actually finished, so the two-step job can be seen
+    // at a glance instead of inferred from the numbers.
+    const started = lines.filter((l) => l.time != null).length;
+    const ended = lines.filter((l) => l.end != null).length;
+    const total = lines.length;
+    $("modeStart").classList.toggle("done", total > 0 && started >= total);
+    $("modeEnd").classList.toggle("done", total > 0 && started > 0 && ended >= started);
+
     $("modeHint").innerHTML = on
-      ? "Enter records when each word or line <b>finishes</b>. Do a second pass."
+      ? "Enter records when each word or line <b>finishes</b>."
       : "Enter records when each word or line <b>begins</b>.";
     $("tapBtn").textContent = on
       ? "TAP — stamp the END of the current line"
