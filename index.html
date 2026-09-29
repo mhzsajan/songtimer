@@ -77,13 +77,17 @@
   .header-left, .header-right {
     display: flex; align-items: center; gap: 12px; min-width: 0;
   }
-  /* Below this width there is no honest way to keep three things on one line,
-     so the search takes its own row rather than overlapping anything. */
-  @media (max-width: 1000px) {
-    header { grid-template-columns: 1fr auto; row-gap: 10px; }
-    .searchwrap { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; }
+  /* The right group is the one that can outgrow the space: progress plus three
+     buttons. It shrinks before the search does, and the search drops to its own
+     row before anything overlaps. */
+  .header-right { flex-wrap: wrap; justify-content: flex-end; row-gap: 6px; }
+  /* Below this width the three groups cannot share one row honestly, so the
+     search takes its own row rather than overlapping anything. */
+  @media (max-width: 1180px) {
+    header { grid-template-columns: auto 1fr; row-gap: 10px; }
     .header-left  { grid-column: 1; grid-row: 1; }
     .header-right { grid-column: 2; grid-row: 1; }
+    .searchwrap   { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; width: auto; }
   }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 1.0938rem; white-space: nowrap; }
   .brand .dot {
@@ -107,10 +111,11 @@
   .searchwrap {
     position: relative;
     display: flex; gap: 8px; align-items: center;
-    /* flex-shrink: 0 is the load-bearing part. The counters are allowed to
-       shrink instead, so the search box never gets squeezed or overlapped. */
-    flex: 1 1 560px; min-width: 260px; max-width: 560px;
-    order: 1;
+    /* Sized against the viewport, not a flex basis: as a grid child the search
+       sits in the middle auto track, so a flex-basis here fought the grid and
+       pushed the layout around. */
+    width: min(460px, 100%);
+    min-width: 240px;
   }
   .searchwrap input { flex: 1 1 auto; min-width: 0; }
   .searchwrap button { flex: none; }
@@ -142,16 +147,18 @@
      -- 12-13px in a bar you only glance at, so the type is bumped and the
      "timed" counters are given an explicit label instead of a bare "3 / 9"
      that means nothing on its own. */
+  /* Progress reads as ONE thing: a bar with the two pass counts labelled
+     beneath it. The previous layout set a bar, two counters and a button row
+     side by side at equal weight, so it was impossible to see at a glance how
+     far through the song you actually were. */
   .progress {
-    display: flex; align-items: center; gap: 12px;
-    color: var(--dim); font-size: 0.875rem;
-    /* Wraps internally before the group itself can push into the search. */
-    flex-wrap: wrap; row-gap: 6px;
+    display: flex; flex-direction: column; gap: 5px;
+    /* An explicit width, not just min-width: the bar is width:100% of this
+       column, and in a flex row a column with only min-width collapses to
+       zero and the bar renders invisible. */
+    width: 148px; flex: none; color: var(--dim);
   }
-  /* The labels are words, not counters, so they must not shrink: at 900px the
-     "started" and "ended" labels were compressing to ~4px tall and reading as
-     noise. These groups stay at full size; the bar and the search give way
-     first. */
+  /* The labels are words, not counters, so they must not shrink. */
   .counter {
     display: flex; align-items: baseline; gap: 5px; white-space: nowrap;
     flex: none;
@@ -160,17 +167,15 @@
   .counter-l { font-size: 0.8125rem; color: var(--dim); letter-spacing: .02em; }
   .counter-ends .counter-n { color: var(--cyan); }
   .counter-ends[data-done="1"] .counter-l { color: var(--teal); }
-  .hist { display: flex; gap: 6px; }
-  .hist button { padding: 7px 11px; font-size: 0.8438rem; line-height: 1; }
-  /* The New button was just the word "New" with no icon and a small hit area,
-     which read as a stray label rather than an action. */
-  #newBtn { display: inline-flex; align-items: center; gap: 6px; }
+  /* Undo/redo stay icon-only. "New song" is the only one that starts with a
+     word, because it is the only destructive one worth naming. */
+  .hist { display: flex; gap: 5px; align-items: center; }
+  .hist button { padding: 7px 10px; font-size: 0.8438rem; line-height: 1; }
+  .hist .newbtn { padding: 8px 13px; }
   .hist-ico { font-size: 0.875rem; line-height: 1; opacity: .8; }
   .bar {
-    width: 130px; height: 5px; border-radius: 3px;
+    width: 100%; height: 6px; border-radius: 3px;
     background: var(--surface-2); overflow: hidden;
-    /* First thing to give up space: the numbers already say the same thing. */
-    flex: 0 1 130px; min-width: 40px;
   }
   .bar i {
     display: block; height: 100%; width: 0;
@@ -521,20 +526,65 @@
 
   a { color: var(--cyan); }
 
-  /* ── footer ─────────────────────────────────────────────── */
+  /* ── footer ─────────────────────────────────────────────────────
+     A four-step summary, not a byline. The steps are the part people get
+     wrong -- the second pass in particular, which has to be done separately
+     and is the step that makes the end timings work. */
   footer {
-    margin-top: 34px;
-    padding: 22px 0 10px;
+    margin-top: 38px;
+    padding: 26px 0 14px;
     border-top: 1px solid var(--line);
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 14px; flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    gap: 20px 40px;
+    align-items: start;
   }
-  .foot-name { font-size: 0.875rem; color: var(--dim); }
-  .foot-name b { color: var(--text); font-weight: 650; }
-  .foot-note { font-size: 0.7812rem; color: var(--faint); margin: 3px 0 0; }
-  .foot-links { display: flex; gap: 16px; font-size: 0.8125rem; }
+  .foot-lead { min-width: 0; }
+  .foot-name { font-size: 1.0625rem; font-weight: 650; color: var(--text); margin: 0; }
+  .foot-note { font-size: 0.8438rem; color: var(--dim); margin: 7px 0 0; line-height: 1.6; }
+
+  .foot-steps {
+    margin: 0; padding: 0; list-style: none;
+    counter-reset: step; display: grid; gap: 7px;
+  }
+  .foot-steps li {
+    counter-increment: step;
+    position: relative; padding-left: 30px;
+    font-size: 0.8125rem; color: var(--dim); line-height: 1.5;
+  }
+  .foot-steps li::before {
+    content: counter(step);
+    position: absolute; left: 0; top: 0;
+    width: 20px; height: 20px; border-radius: 6px;
+    display: grid; place-items: center;
+    background: var(--surface-2); border: 1px solid var(--line-2);
+    color: var(--cyan);
+    font: 600 0.6875rem/1 var(--mono);
+  }
+  .foot-steps b { color: var(--text); font-weight: 600; }
+  .foot-steps kbd { font-size: 0.75rem; }
+
+  .foot-safe {
+    grid-column: 1 / -1;
+    margin: 0; padding: 11px 14px;
+    background: var(--surface); border: 1px solid var(--line);
+    border-left: 2px solid var(--cyan-deep);
+    border-radius: 0 7px 7px 0;
+    font-size: 0.8125rem; color: var(--dim); line-height: 1.6;
+  }
+
+  .foot-links {
+    grid-column: 1 / -1;
+    display: flex; gap: 18px; align-items: center;
+    font-size: 0.8125rem;
+  }
   .foot-links a { color: var(--dim); }
   .foot-links a:hover { color: var(--cyan); }
+  .foot-by { color: var(--faint); margin-left: auto; }
+
+  @media (max-width: 860px) {
+    footer { grid-template-columns: 1fr; }
+  }
 
   /* ── lyric search ─────────────────────────────────────────── */
   .results { display: grid; gap: 6px; margin-top: 10px; }
@@ -600,7 +650,6 @@
     <div class="brand">
       <span class="dot">♪</span>
       <span class="brand-full">Song Timer</span>
-      <span class="by">by <a href="https://github.com/mhzsajan" target="_blank" rel="noopener">Sajan</a></span>
     </div>
     <div class="now-title" id="nowTitle"></div>
   </div>
@@ -616,23 +665,32 @@
     <div class="searchpop" id="searchResults"></div>
   </div>
 
-  <div class="header-right progress">
-    <div class="counter" title="Lines that have a start time">
-      <span class="counter-n mono" id="progressText">0 / 0</span>
-      <span class="counter-l">started</span>
+  <div class="header-right">
+    <!-- Progress is one unit, not two. The old split counters read as two
+         unrelated numbers; this is a single bar with the two passes labelled
+         underneath, which is what the work actually is. -->
+    <div class="progress" title="How much of the song is timed">
+      <div class="bar"><i id="progressBar"></i></div>
+      <div class="progress-labels">
+        <span class="counter">
+          <span class="counter-n mono" id="progressText">0 / 0</span>
+          <span class="counter-l">started</span>
+        </span>
+        <span class="counter counter-ends" id="endCounter" hidden>
+          <span class="counter-n mono" id="endText">0 / 0</span>
+          <span class="counter-l">ended</span>
+        </span>
+      </div>
     </div>
-    <div class="counter counter-ends" id="endCounter" title="Lines that also have an end time" hidden>
-      <span class="counter-n mono" id="endText">0 / 0</span>
-      <span class="counter-l">ended</span>
-    </div>
+
     <div class="hist">
-      <button id="newBtn" type="button" title="Start a new song from scratch (clears timings and lyrics)">
-        <span class="hist-ico" aria-hidden="true">＋</span>New song
-      </button>
       <button id="undoBtn" type="button" title="Undo (Ctrl+Z)" disabled>↶</button>
       <button id="redoBtn" type="button" title="Redo (Ctrl+Shift+Z)" disabled>↷</button>
+      <button id="newBtn" type="button" class="newbtn"
+              title="Start a new song — clears the lyrics and every timing">
+        <span class="hist-ico" aria-hidden="true">＋</span>New song
+      </button>
     </div>
-    <span class="bar" title="Progress"><i id="progressBar"></i></span>
   </div>
 </header>
 
@@ -817,14 +875,35 @@
     </div>
   </div>
 
+  <!-- The footer answers the three questions a visitor leaves with: what do I
+       make, where does it go, and is my work safe. It used to be a byline and
+       two links, which answered none of them. -->
   <footer>
-    <div>
-      <p class="foot-name">Song Timer by <b>Sajan Maharjan</b></p>
-      <p class="foot-note">Time a song once — the same .lrc drives AbleSet in Ableton Live and the lyric overlay for video.</p>
+    <div class="foot-lead">
+      <p class="foot-name">Song Timer</p>
+      <p class="foot-note">
+        Time a song once. The same timing drives your lyric video, your
+        AbleSet set in Ableton, and an overlay for OBS — no re-typing, and they
+        cannot drift apart.
+      </p>
     </div>
+
+    <ol class="foot-steps">
+      <li><b>Load</b> the song and paste or search for the lyrics.</li>
+      <li><b>Pass 1</b> — play, and press <kbd>Enter</kbd> as each line begins.</li>
+      <li><b>Pass 2</b> — press <kbd>T</kbd>, then <kbd>Enter</kbd> as each line ends.</li>
+      <li><b>Export</b> for whichever app you are making it in.</li>
+    </ol>
+
+    <p class="foot-safe">
+      Everything stays in this browser. No upload, no account, and your work is
+      saved as you go — close the tab and pick it up later.
+    </p>
+
     <nav class="foot-links">
       <a href="https://github.com/mhzsajan/songtimer" target="_blank" rel="noopener">Source</a>
       <a href="https://mhzsajan.github.io/" target="_blank" rel="noopener">Portfolio</a>
+      <span class="foot-by">by Sajan Maharjan</span>
     </nav>
   </footer>
 </div>
@@ -861,8 +940,15 @@
   let redoStack = [];
   let lastEditAt = 0;
 
+  // Undo snapshots carry `end` too. Without it, a single Ctrl+Z threw away the
+  // whole second pass -- the same class of bug as writeNow() dropping it, found
+  // in a second place.
   const snapshot = () =>
-    JSON.stringify(lines.map((l) => ({ text: l.text, time: l.time })));
+    JSON.stringify(lines.map((l) => ({
+      text: l.text,
+      time: l.time,
+      end: l.end ?? null,
+    })));
 
   function restore(snap) {
     const data = JSON.parse(snap);
