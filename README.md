@@ -1,137 +1,157 @@
 # 🎵 Song Timer
 
-**Tap lyric timings while a song plays, then export one `.lrc` that drives both
-Ableton Live and your video.**
+**Time a song's lyrics once. Use them everywhere — a lyric video, an Ableton
+Live set, and an overlay for streaming.**
 
 Built by [Sajan Maharjan](https://github.com/mhzsajan) · Technical Director,
 Deepak Bajracharya & The Rhythm Band.
 
-**➡ [Open Song Timer](https://mhzsajan.github.io/songtimer/)**
-
-No install, no server, no upload. It is one HTML page that runs entirely in your
-browser, so your audio never leaves your device.
+**➡ [Open Song Timer](https://mhzsajan.github.io/songtimer/)** — one web page,
+no install, no upload. Your audio never leaves your device.
 
 ---
 
-## What it's for
+## The idea
 
-Timing lyrics is the slow, fiddly part of preparing a song for a show — and
-the timings you produce are usually needed in two places at once:
+Preparing a song means typing the same timing three times: once for the lyric
+video, once for the Ableton set, once for the stream overlay. Each one drifts
+from the others, and you find out during a soundcheck.
+
+Song Timer removes the repetition. You time the song **once**, and every tool
+reads the same numbers:
 
 ```
-                 song + lyrics
-                      │
-                 Song Timer          ← you time it here, once
-                      │
-                   song.lrc
-                 ┌────┴─────┐
-                 │          │
-    ableset.com/tools/   the Remotion renderer
-       lyrics-lrc              │
-                 │          │
-                 ▼          ▼
-     .als → Ableton +    transparent lyric
-     AbleSet (lyric       overlay → Videosync2
-     track, one MIDI      video layer
-     clip per line)
+        song.mp3  +  lyrics
+               │
+          Song Timer            ← you time it here, once
+               │
+     Song.lrc   +   Song.ends.txt
+        │                  │
+        ▼                  ▼
+   ┌─────────┐      ┌──────────────┐      ┌──────────┐
+   │ AbleSet │      │ Remotion AI  │      │   OBS    │
+   │ (Ableton)│      │ (the video)  │      │ (overlay)│
+   └─────────┘      └──────────────┘      └──────────┘
+     one MIDI           a lyric              a Browser
+     clip per line      video .mp4           Source page
 ```
 
-One set of timings, two consumers. Ableton and the video can never disagree,
-because there is only one set of numbers.
+Both output files are produced in the same export, from the same session, so
+they cannot disagree with each other or with the music.
 
-## Usage
+## How to use it
 
-1. **Find or type the lyrics** — search below, or paste/type them yourself
-2. **Load a song** — any audio your browser can play
-3. **Play and tap** — `Enter` (or the TAP button) stamps the current line with
-   the song position and advances
-4. **Adjust** — nudge any stamp, or click a timestamp to type an exact time
-5. **Preview** — karaoke-style check of the timing against the music
-6. **Export `.lrc`**
+**1 — Load and write.** Choose a song, then paste the lyrics or search for
+them (see [Looking lyrics up](#looking-lyrics-up)).
 
-## Looking lyrics up
+**2 — Pass 1: the starts.** Press `Space` to play, then `Enter` each time a
+line *begins*. The tool walks the lyrics for you.
 
-Search [LRCLIB](https://lrclib.net), a free open lyrics database. Search it
-like you would Google — *"artist + song title"*.
+**3 — Pass 2: the ends.** Press `T`, then `Enter` each time a line *finishes*.
 
-If a song has **timed** lyrics, you get the timing as well as the words, so you
-play it through, nudge what's off, and export. Timed results are listed first
-and marked **TIMED**; entries with words only are marked **WORDS ONLY** and
-still save you retyping the lyric.
+This second pass is what most people skip, and it matters. Without it the video
+has to guess when a line ended, and guesses linger: a line sung before a long
+instrumental can sit on screen for 20 seconds or more. Pass 2 takes as long as
+pass 1 and removes the problem entirely.
 
-Results are never applied automatically — you pick the right one. LRCLIB
-matches on text similarity, so *"the rhythm band"* also returns an unrelated
-band with a similar name.
+**4 — Export.** One button per destination; see [Exporting](#exporting).
 
-> Coverage varies. It is strong for well-known Nepali artists, weaker for
-> obscure and older songs, and nothing for lyrics that exist only in a
-> rehearsal-room document. For Nepali songs it has no timings for, your
-> Whisper-timed tool is still the better starting point — export from there and
-> load the `.lrc` here.
+## Exporting
 
-## Nudging a whole song
+The buttons are named for where the files go, because what each one needs is
+genuinely different.
 
-If every line is early or late — a count-in, a bar of silence before the
-first vocal — shift them all at once instead of nudging forty lines:
+| Button | Writes | For |
+|---|---|---|
+| **For AbleSet** | `Song.lrc` | Ableton Live. One MIDI clip per line. |
+| **For Remotion AI** | `Song.lrc` + `Song.ends.txt` | The lyric video. |
+| **For OBS** | `Song.html` | A transparent overlay for streaming. |
 
-- **Apply to all** with a value in seconds
-- **Align first line to playhead** moves the first stamped line exactly where
-  the playhead is, and carries everything else by the same amount
+`E` is a shortcut for **For Remotion AI**.
 
-`Ctrl+Z` undoes it, so a mistimed shift costs nothing.
+**Why the ends are in a second file.** AbleSet turns every `[timestamp]` into a
+MIDI clip, so a second timestamp would show the same lyric twice in Ableton —
+and it would be indistinguishable from the LRC convention where several
+timestamps mean the same line repeated. So the plain `.lrc` stays exactly as it
+is, and the ends travel beside it in `Song.ends.txt`.
 
-## Getting accurate timings
+**For OBS** writes a single self-contained page. Add a **Browser Source** in OBS,
+point *Local file* at it, and size it to your canvas — its background is
+transparent by default, so it sits straight over the camera. Press `Space` to
+start it, `←`/`→` to nudge, `R` to reset.
 
-The three ways to fix a stamp, in order of usefulness:
+## Keeping the timing honest
+
+**Your work is saved as you go.** The session is mirrored to `localStorage`, so
+an accidental refresh cannot cost you forty tapped lines. It is offered back on
+your next visit.
+
+**Your timings survive edits.** Fix a spelling, add a line you missed, delete a
+one — each stamp stays with its own text. You can retype the lyrics without
+timing the song again.
+
+**Three ways to fix a stamp**, in order of usefulness:
 
 | | |
 |---|---|
-| **Click the timestamp** | Type the exact time. Best when you know where it should be. Accepts `1:23.45` or plain seconds (`83.45`). |
-| **`,` and `.`** | Nudge ∓0.1s. Hold `Shift` for ∓0.5s. Good for small drift. |
-| **Reload a `.lrc`** | `Load .lrc` restores a previously exported file *with* its stamps, so refining a song doesn't mean re-timing it. |
+| **Click the timestamp** | Type the exact time. Accepts `1:23.45` or plain seconds. |
+| **`,` and `.`** | Nudge ∓0.1s. Hold `Shift` for ∓0.5s. |
+| **Load `.lrc`** | Restores a previously exported file *with* its stamps, so refining a song never means re-timing it. |
 
-**Your timings survive edits.** Fix a spelling, insert a line, delete a line —
-each stamp stays with its own text. A stamp is never duplicated onto another
-line.
-
-**Your work is saved automatically.** The session is mirrored to `localStorage`,
-so an accidental refresh can't cost you forty tapped lines. It comes back on
-your next visit.
+**Shifting a whole song.** If every line is early or late — a count-in, a bar
+of silence before the first vocal — use **Apply to all**, or **Align first line
+to playhead**. `Ctrl+Z` undoes it, so a mistimed shift costs nothing.
 
 ## Keyboard reference
 
 | Key | Action |
 |---|---|
 | `Space` | Play / pause |
-| `Enter` | Stamp selected line & advance |
+| `Enter` | Stamp the current line, advance |
+| `T` | Switch between pass 1 and pass 2 |
 | `↑` / `↓` | Select previous / next line |
 | `←` / `→` | Seek −3s / +3s |
-| `,` / `.` | Nudge stamp −0.1s / +0.1s |
+| `,` / `.` | Nudge −0.1s / +0.1s |
 | `Shift` + `,` / `.` | Nudge −0.5s / +0.5s |
-| `Backspace` | Clear selected stamp |
-| `P` | Toggle preview (karaoke) mode |
-| `E` | Export `.lrc` |
+| `Backspace` | Clear the stamp, rewind to it |
+| `P` | Preview (karaoke) mode |
+| `E` | Export for Remotion AI |
 | `J` | Jump the playhead to the selected line |
 | `M` | Mute |
 | `Ctrl+Z` / `Ctrl+Shift+Z` | Undo / redo |
 | `/` | Focus the lyric search box |
 | `Esc` | Exit preview mode |
 
-Click any row to select it. `Backspace` clears the selected stamp **and** moves
-the playhead back to where that line was, so a mistap is recovered with
-`Backspace` → `Space` → tap again.
+Click any row to select it. `Backspace` clears the stamp **and** rewinds the
+playhead to it, so a mistap is recovered with `Backspace` → `Space` → tap.
 
-Playback speed (`0.5×` / `0.75×` / `1×` / `1.25×`) is a listening aid for fast
-or dense lines. It does **not** change the timings you stamp: the playhead
-still reports true song position, so tapping while slowed records the correct
-timestamp.
+Playback speed (`0.5×`–`1.25×`) is a listening aid for dense lines. It does
+**not** change what you stamp: the playhead still reports true song position.
+
+## Looking lyrics up
+
+Search [LRCLIB](https://lrclib.net), a free open lyrics database, as you would
+a search engine — *"artist + song title"*.
+
+A result marked **timed** arrives with the timing already on it, so you play it
+through, nudge what is off, and export. **Words only** still saves you the
+retyping.
+
+Results are **never applied automatically** — you pick. LRCLIB matches on text
+similarity, so *"the rhythm band"* also returns an unrelated band with a
+similar name, and silently accepting one would be worse than no lookup at all.
+
+Coverage is strongest for well-known Nepali artists and thinner for older or
+obscure songs. If a song's lyrics only exist in a rehearsal-room document, type
+them.
 
 ## Output format
 
-Standard `.lrc`, with the song title carried across as `[ti:]`:
+Standard `.lrc`, carrying the title and band as metadata:
 
 ```lrc
 [ti:Ritu]
+[ar:Deepak Bajracharya & The Rhythm Band]
 [00:38.57]फर्केर आउने छैन,
 [00:40.86]म कुनै ऋतु होइन..
 ```
@@ -143,45 +163,46 @@ LRC convention and what both AbleSet and the video renderer expect:
 [00:22.50][00:42.50][01:02.50]chorus line
 ```
 
-In the editor a repeat is still its own row, so you can stamp each occurrence
+In the editor a repeat is still its own row so you can stamp each occurrence
 separately; they merge on export and split apart again if you `Load .lrc` the
-result.
+result. Any `.lrc` player reads the file, including
+[alsmuse](https://github.com/provos/alsmuse).
 
-Any `.lrc`-compatible player reads it — including
-[alsmuse](https://github.com/provos/alsmuse) and AbleSet's own lyrics view.
+The ends file is one line per timed lyric, `start | end | text`:
+
+```
+1:06.45 | 1:07.10 | फर्केर आउने छैन
+```
 
 > **Non-Latin scripts:** timestamps are plain ASCII, so Devanagari, Tamil and
-> similar text pass through untouched. Save the exported file as UTF-8 — some
-> older editors default to a local codepage and will mangle it.
+> similar text pass through untouched. Save as UTF-8 — some older editors
+> default to a local codepage and will mangle it.
 
 ## Tips
 
-- **Stamp on the downbeat, not the word start.** AbleSet and karaoke players
-  show the line from its timestamp, so the first syllable is what the audience
-  reads.
-- **Leave a little air.** Timestamps are absolute; a line that starts too early
-  reads as early.
+- **Stamp on the downbeat, not the word start.** Everything downstream shows the
+  line from its timestamp, so the first syllable is what the audience reads.
+- **Leave a little air.** Timestamps are absolute, so a line that starts too
+  early reads as early.
 - **Don't chase perfection.** ±0.1s is below what a room notices.
-- **Stamp all the repeats.** One line sung three times is one line — export
-  produces one timestamp, and you'd need three to catch each repeat.
+- **Stamp every repeat.** A chorus sung three times needs three timestamps to be
+  caught each time.
 
 ## Related
 
-- **[AbleSet](https://ableset.app)** — setlist and lyrics view for Ableton Live.
-  Drop your `.lrc` on
-  [ableset.com/tools/lyrics-lrc](https://ableset.com/tools/lyrics-lrc) to get a
-  Live set with one MIDI clip per line.
+- **[lyric-video-remotion](https://github.com/mhzsajan/lyric-video-remotion)** —
+  turns the exported files into the lyric video. Reads `Song.lrc` *and*
+  `Song.ends.txt`, so the on-screen timing is the one you tapped.
+- **[AbleSet](https://ableset.app)** — setlist and lyrics view for Ableton
+  Live. Drop the `.lrc` on
+  [ableset.com/tools/lyrics-lrc](https://ableset.com/tools/lyrics-lrc).
 - **[alsmuse](https://github.com/provos/alsmuse)** — A/V script generation from
   Ableton Live sets.
-- **Remotion lyric-overlay renderer** — turns the same `.lrc` into a
-  ProRes 4444 video with a real alpha channel, for layering over a
-  Videosync2 camera feed.
-- **Videosync2** — the timeline this workflow is built around.
 
 ## Privacy
 
-Nothing is uploaded. There is no account, no telemetry and no network request
-at all — not even a font. Once the page has loaded, it works offline.
+Nothing is uploaded. No account, no telemetry, no network request at all — not
+even a font. Once the page has loaded it works offline.
 
 ## License
 
