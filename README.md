@@ -72,6 +72,13 @@ genuinely different.
 
 `E` is a shortcut for **For Remotion AI**.
 
+**The song title is required.** It is the name of every file the export writes,
+and there is nothing to fall back to — without one the files would be called
+`lyrics.remotion_start.lrc` and `lyrics.remotion_end.lrc`, which still pair
+correctly and still tell you nothing about which song they are. The export
+buttons stay disabled until it is filled in, and the `E` shortcut and the
+automatic export on closing the tab are blocked too.
+
 **Why every file is named for its target.** The three exports used to collide:
 AbleSet and Remotion both wrote a file called `Song.lrc`, with the same starts
 but read by different programs. In a folder listing there was no way to tell

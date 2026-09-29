@@ -231,6 +231,60 @@ console.log("");
   }
 }
 
+// ---- 5. the title is MANDATORY, not merely used ----------------------------
+//
+// safe() still falls back to "lyrics" so a filename can never be empty. That
+// fallback is now a backstop rather than a path: nothing in the UI may reach
+// it. Asserted on the source because runExport is DOM-bound and cannot be
+// extracted the way safe() and the builders are -- and because what is being
+// asserted is exactly the kind of thing that later gets deleted as redundant
+// once the buttons are already disabled.
+{
+  const runExport = src.slice(src.indexOf("function runExport"));
+  const body = runExport.slice(0, runExport.indexOf("\n  }"));
+
+  if (/if \(!hasTitle\(\)\)/.test(body)) {
+    pass("runExport refuses to export without a title");
+  } else {
+    fail("runExport has no title guard");
+  }
+  // The guard has to come BEFORE the files are built, or it is a message
+  // rather than a block.
+  const guard = body.indexOf("!hasTitle()");
+  const build = body.search(/const files = spec\.build/);
+  if (guard > 0 && (build < 0 || guard < build)) {
+    pass("the guard runs before any file is written");
+  } else {
+    fail("the title guard runs after the files are built, so it does not block");
+  }
+  if (/b\.disabled = !hasAny \|\| !hasTitle\(\)/.test(src)) {
+    pass("the export buttons are disabled without a title");
+  } else {
+    fail("the export buttons are not disabled without a title");
+  }
+  // A disabled button cannot be clicked to ask why it is disabled, so the
+  // reason has to already be on screen.
+  if (/id="titleHint"/.test(src) && /\("titleHint"\)\.hidden/.test(src)) {
+    pass("a missing title is explained on screen, not only on click");
+  } else {
+    fail("nothing tells the user why the export buttons are disabled");
+  }
+  // A requirement that appears only once it is broken has already been broken.
+  if (/<em class="req"[^>]*>required<\/em>/.test(src)) {
+    pass("the field is marked required before anything is wrong");
+  } else {
+    fail("the title field is not marked as required");
+  }
+  // hasTitle() must be a real trim, or a title of spaces passes it and the
+  // filename collapses straight back to "lyrics".
+  const helper = src.slice(src.indexOf("const titleValue"), src.indexOf("const titleValue") + 200);
+  if (/value\.trim\(\)/.test(helper) && /hasTitle[\s\S]*?\.length > 0/.test(helper)) {
+    pass("a title of only spaces does not count as a title");
+  } else {
+    fail("hasTitle() does not trim, so a title of spaces passes the check");
+  }
+}
+
 console.log("");
 if (bad) {
   console.log("  " + bad + " problem(s).");

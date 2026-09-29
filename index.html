@@ -461,6 +461,21 @@
   .meta-field input { width: 100%; }
   @media (max-width: 620px) { .meta { grid-template-columns: 1fr; } }
 
+  /* The required marker is always visible, not only when the field is empty:
+     a requirement that appears at the moment it is violated has already been
+     violated. The "needs" state adds emphasis, and only shows once there is
+     something to export -- nagging about a title on a blank page is noise. */
+  .meta-field .req {
+    font-style: normal; font-weight: 500; font-size: 0.625rem;
+    letter-spacing: .04em; text-transform: none;
+    color: var(--faint); opacity: .75;
+    border: 1px solid var(--line); border-radius: 999px;
+    padding: 0 6px; margin-left: 6px; vertical-align: 1px;
+  }
+  .meta-field.needs > span { color: var(--warn); }
+  .meta-field.needs .req { border-color: currentColor; opacity: 1; }
+  .meta-field.needs input { border-color: var(--warn); }
+
   /* Three targets, one row of buttons and one row of descriptions beneath.
      Both use the same track count so each caption lines up under its button;
      the button itself carries only the destination name, because that is all
@@ -733,9 +748,17 @@
              and the renderer puts them on screen for the opening of a video.
              Buried next to the file picker they read as a form field. -->
         <div class="meta">
-          <label class="meta-field">
-            <span>Song title</span>
-            <input type="text" id="songTitle" placeholder="e.g. Ritu">
+          <label class="meta-field" id="songTitleField">
+            <span>Song title <em class="req" title="Required">required</em></span>
+            <!-- The filename comes from this box and nothing else, so it is
+                 required rather than merely expected. The old fallback wrote
+                 "lyrics.remotion_end.lrc", which still pairs with its start
+                 file and is therefore still valid -- and still says nothing
+                 about which song it is. Two untitled songs produce two folders
+                 that look identical until they are open. -->
+            <input type="text" id="songTitle" placeholder="e.g. Ritu"
+                   required aria-required="true"
+                   autocomplete="off" spellcheck="false">
           </label>
           <label class="meta-field">
             <span>Band / artist</span>
@@ -743,6 +766,11 @@
                    placeholder="e.g. Deepak Bajracharya &amp; The Rhythm Band">
           </label>
         </div>
+        <p class="hint" id="titleHint" hidden>
+          <b>A song title is required</b> — the exported files are named after it,
+          so <code>lyrics.remotion_start.lrc</code> would be all you had to tell
+          two songs apart. Type one above.
+        </p>
 
         <textarea id="lyrics" class="lyric"
           placeholder="Type or load lyrics here, one sung line per line.&#10;[SECTION] headers are ignored."></textarea>
@@ -2093,6 +2121,12 @@ ${CLOSE}
 `;
   }
 
+  // The one field the filename is built from. A title is not metadata here, it
+  // is the name of every file this program produces, and there is no second
+  // source to fall back to.
+  const titleValue = () => $("songTitle").value.trim();
+  const hasTitle = () => titleValue().length > 0;
+
   function paintExports() {
     const box = $("exports");
     const notes = $("exportNotes");
@@ -2100,11 +2134,17 @@ ${CLOSE}
     notes.innerHTML = "";
     const hasAny = lines.some((l) => l.time != null);
 
+    // Shown next to the buttons, and shown BEFORE they are clicked, because a
+    // disabled button cannot be clicked to ask why it is disabled.
+    $("titleHint").hidden = hasTitle() || !hasAny;
+    $("songTitleField").classList.toggle("needs", !hasTitle() && hasAny);
+    $("songTitle").setAttribute("aria-invalid", String(!hasTitle() && hasAny));
+
     for (const spec of EXPORTS) {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "primary";
-      b.disabled = !hasAny;
+      b.disabled = !hasAny || !hasTitle();
       b.dataset.target = spec.id;
       b.textContent = spec.label;
       b.onclick = () => runExport(spec);
@@ -2123,12 +2163,27 @@ ${CLOSE}
   function runExport(spec) {
     const stamped = lines.filter((l) => l.time != null);
     if (!stamped.length) { setStatus("Stamp some lines first."); return; }
+
+    // Defence in depth. The buttons are already disabled without a title, but
+    // runExport is also reached from the E key and from the beforeunload
+    // auto-export, neither of which goes through the button's disabled state --
+    // and an export that happens on the way out of the tab is the worst time to
+    // discover a requirement. It also has to be checked HERE because a guard
+    // that lives only in the UI is a guard that a future button forgets.
+    if (!hasTitle()) {
+      setStatus("Give the song a title first — the exported files are named " +
+        "after it, so without one they would be called lyrics.*");
+      $("songTitle").focus();
+      $("songTitleField").classList.add("needs");
+      return;
+    }
+
     const ctx = {
-      title: $("songTitle").value.trim(),
+      title: titleValue(),
       band: $("bandName").value.trim(),
       stamped,
       ended: stamped.filter((l) => l.end != null),
-      lrc: buildLrc(stamped, $("songTitle").value.trim(), $("bandName").value.trim()),
+      lrc: buildLrc(stamped, titleValue(), $("bandName").value.trim()),
     };
 
     const files = spec.build(ctx);
@@ -2145,8 +2200,8 @@ ${CLOSE}
       // The id here was "video", which no EXPORTS entry uses -- they are
       // ableset / remotion / obs -- so this branch never ran and the warning
       // the build function promises never appeared. Forgetting the second
-      // pass therefore wrote a .lrc with no .ends.txt and said nothing, and
-      // the renderer fell back to guessing every line end.
+      // pass therefore wrote a start file with no end file beside it and said
+      // nothing, and the renderer fell back to guessing every line end.
       msg += ". No end times recorded, so the renderer will fall back to " +
         "guessing from the next line. Switch to End mode (T) and do a second pass.";
     } else if (spec.id === "remotion" && ctx.ended.length < stamped.length) {
